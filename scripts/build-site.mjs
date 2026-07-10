@@ -26,7 +26,7 @@ for (const [path, type] of files) {
 }
 assets["/"] = assets["/index.html"];
 
-const worker = `const assets = ${JSON.stringify(assets)};\n\nconst notFound = new Response("Not found", {\n  status: 404,\n  headers: { "content-type": "text/plain; charset=utf-8" }\n});\n\nexport default {\n  async fetch(request) {\n    const url = new URL(request.url);\n    const path = url.pathname.endsWith("/") && url.pathname !== "/" ? url.pathname.slice(0, -1) : url.pathname;\n    const asset = assets[path] || assets[path + ".html"];\n\n    if (!asset) return notFound;\n\n    return new Response(asset.body, {\n      headers: {\n        "content-type": asset.type,\n        "cache-control": "public, max-age=300"\n      }\n    });\n  }\n};\n`;
+const worker = `const assets = ${JSON.stringify(assets)};\n\nexport default {\n  async fetch(request) {\n    const url = new URL(request.url);\n    const path = url.pathname.endsWith("/") && url.pathname !== "/" ? url.pathname.slice(0, -1) : url.pathname;\n    const asset = assets[path] || assets[path + ".html"];\n\n    if (!asset) {\n      return new Response("Not found", {\n        status: 404,\n        headers: { "content-type": "text/plain; charset=utf-8" }\n      });\n    }\n\n    return new Response(asset.body, {\n      headers: {\n        "content-type": asset.type,\n        "cache-control": "public, max-age=300"\n      }\n    });\n  }\n};\n`;
 
 await mkdir(join(dist, "server"), { recursive: true });
 await writeFile(join(dist, "server", "index.js"), worker);
