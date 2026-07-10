@@ -1,0 +1,358 @@
+/* ═══════════════════════════════════════════
+   conjugation.css — 变形规则页专用样式
+   复用主站 CSS 变量，新增卡片与表格样式
+   ═══════════════════════════════════════════ */
+
+/* ── 布局 ── */
+.conj-app-shell {
+  display: grid;
+  grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+  gap: 18px;
+  padding: 0 clamp(14px, 4vw, 42px) 34px;
+}
+
+.conj-sidebar {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  display: grid;
+  gap: 12px;
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.conj-workspace {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  align-content: start;
+}
+
+.conj-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ── 侧边栏分类按钮 ── */
+.conj-cat-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--button-surface);
+  color: var(--ink);
+  padding: 10px 12px;
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  font: inherit;
+  cursor: pointer;
+}
+
+.conj-cat-btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--line));
+}
+
+.conj-cat-btn.active {
+  background: linear-gradient(135deg, #f1e8f5, #f8edf4);
+  border-color: var(--accent);
+}
+
+:root[data-theme="night"] .conj-cat-btn.active {
+  background: linear-gradient(135deg, #352541, #432f53);
+}
+
+.conj-cat-btn .cat-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--accent);
+  font-weight: 900;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.conj-cat-btn .cat-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.conj-cat-btn .cat-label strong {
+  display: block;
+  font-size: 14px;
+}
+
+.conj-cat-btn .cat-label small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.conj-cat-btn .cat-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  flex-shrink: 0;
+}
+
+/* ── 子分类标签 ── */
+.conj-sub-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.conj-sub-btn {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--input-bg);
+  color: var(--muted);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.conj-sub-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.conj-sub-btn.active {
+  background: var(--soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── 变形卡片网格 ── */
+.conj-card-grid {
+  display: grid;
+  gap: 16px;
+}
+
+/* ── 变形卡片 ── */
+.conj-card {
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+}
+
+.conj-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.conj-card-top .conj-level {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.conj-card-top .conj-cat-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+:root[data-theme="night"] .conj-card-top .conj-cat-tag {
+  background: #21172c;
+}
+
+.conj-card-top h3 {
+  font-size: 20px;
+  flex: 1;
+  min-width: 200px;
+}
+
+/* ── 规则说明 ── */
+.conj-formation {
+  border-left: 3px solid var(--accent);
+  background: rgba(238, 230, 243, 0.68);
+  padding: 10px 14px;
+  border-radius: 0 8px 8px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+:root[data-theme="night"] .conj-formation {
+  background: rgba(56, 40, 69, 0.82);
+}
+
+.conj-formation strong {
+  color: var(--accent);
+}
+
+/* ── 变形表格 ── */
+.conj-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.conj-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.conj-table th {
+  background: var(--soft);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 13px;
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+:root[data-theme="night"] .conj-table th {
+  background: var(--soft-2);
+}
+
+.conj-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  vertical-align: top;
+}
+
+.conj-table tr:last-child td {
+  border-bottom: none;
+}
+
+.conj-table tr:hover td {
+  background: color-mix(in srgb, var(--soft-2) 40%, transparent);
+}
+
+.conj-table td:first-child {
+  color: var(--accent-2);
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  min-width: 80px;
+}
+
+.conj-table b {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+/* ── 例句区 ── */
+.conj-example {
+  border-left: 3px solid var(--accent-2);
+  background: rgba(238, 230, 243, 0.48);
+  padding: 10px 14px;
+  border-radius: 0 8px 8px 0;
+}
+
+:root[data-theme="night"] .conj-example {
+  background: rgba(56, 40, 69, 0.62);
+}
+
+.conj-example p {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.conj-example small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ── 备注 ── */
+.conj-notes {
+  display: grid;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.conj-notes p {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.conj-notes p::before {
+  content: "•";
+  color: var(--accent-2);
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+/* ── 空状态 ── */
+.conj-empty {
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+/* ── 返回按钮 ── */
+#backLink {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 1080px) {
+  .conj-app-shell {
+    grid-template-columns: 1fr;
+  }
+  .conj-sidebar {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .conj-card-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .conj-card-top h3 {
+    min-width: unset;
+  }
+  .conj-table {
+    font-size: 13px;
+  }
+  .conj-table th,
+  .conj-table td {
+    padding: 6px 8px;
+  }
+}
