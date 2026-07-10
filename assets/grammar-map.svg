@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 360" role="img" aria-labelledby="title desc">
+  <title id="title">日语表达关系图</title>
+  <desc id="desc">以意思为中心连接不同等级的日语表达。</desc>
+  <rect width="680" height="360" rx="24" fill="#f7f0fa"/>
+  <g fill="none" stroke="#cdbed8" stroke-width="2">
+    <path d="M340 180 C260 100 160 96 92 132"/>
+    <path d="M340 180 C252 190 156 224 96 280"/>
+    <path d="M340 180 C410 98 520 88 592 128"/>
+    <path d="M340 180 C424 206 520 228 596 286"/>
+    <path d="M340 180 C340 120 340 88 340 54"/>
+    <path d="M340 180 C340 236 340 274 340 314"/>
+  </g>
+  <circle cx="340" cy="180" r="58" fill="#7d6791"/>
+  <text x="340" y="172" text-anchor="middle" font-family="system-ui, sans-serif" font-size="26" font-weight="700" fill="#fff">意思</text>
+  <text x="340" y="200" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="#f3eaf6">意味機能</text>
+  <g font-family="system-ui, sans-serif" font-weight="700" font-size="20">
+    <rect x="44" y="94" width="120" height="64" rx="18" fill="#fffafd" stroke="#ded2e5"/>
+    <text x="104" y="134" text-anchor="middle" fill="#342c3d">N5 基础</text>
+    <rect x="38" y="250" width="132" height="64" rx="18" fill="#fffafd" stroke="#ded2e5"/>
+    <text x="104" y="290" text-anchor="middle" fill="#342c3d">N4 扩展</text>
+    <rect x="276" y="26" width="128" height="64" rx="18" fill="#fffafd" stroke="#ded2e5"/>
+    <text x="340" y="66" text-anchor="middle" fill="#342c3d">N3 细化</text>
+    <rect x="276" y="286" width="128" height="64" rx="18" fill="#fffafd" stroke="#ded2e5"/>
+    <text x="340" y="326" text-anchor="middle" fill="#342c3d">场景选择</text>
+    <rect x="516" y="94" width="120" height="64" rx="18" fill="#fffafd" stroke="#ded2e5"/>
+    <text x="576" y="134" text-anchor="middle" fill="#342c3d">N2 书面</text>
+    <rect x="510" y="258" width="136" height="64" rx="18" fill="#fffafd" stroke="#ded2e5"/>
+    <text x="578" y="298" text-anchor="middle" fill="#342c3d">易混辨析</text>
+  </g>
+</svg>
