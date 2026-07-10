@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>贝卡的紫藤日语语法翻译训练天地</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Beka's wisteria grammar atelier</p>
+        <h1>贝卡的紫藤日语语法翻译训练天地</h1>
+      </div>
+      <div class="top-actions">
+        <a href="conjugation.html" class="ghost-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+          <span aria-hidden="true">📖</span>
+          变形规则速查
+        </a>
+        <button id="themeToggleBtn" class="theme-toggle" type="button" title="切换白天/夜间模式" aria-pressed="false">
+          <span aria-hidden="true">☾</span>
+          夜间
+        </button>
+        <button id="resetCustomBtn" class="ghost-btn" type="button" title="清空本机新增、修改和笔记">
+          <span aria-hidden="true">⌫</span>
+          清空自定义
+        </button>
+        <button id="resetProgressBtn" class="ghost-btn" type="button" title="清空本机进度">
+          <span aria-hidden="true">↺</span>
+          重置
+        </button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="意思组导航">
+        <div class="panel compact">
+          <label for="searchInput">搜索意思 / 语法</label>
+          <input id="searchInput" type="search" placeholder="例如：原因、ように、わけだ">
+        </div>
+        <div class="panel compact">
+          <label for="levelFilter">等级范围</label>
+          <select id="levelFilter">
+            <option value="all">全部 N5-N1</option>
+            <option value="N5">含 N5</option>
+            <option value="N4">含 N4</option>
+            <option value="N3">含 N3</option>
+            <option value="N2">含 N2</option>
+            <option value="N1">含 N1</option>
+          </select>
+        </div>
+        <nav id="groupList" class="group-list"></nav>
+      </aside>
+
+      <section class="workspace" aria-live="polite">
+        <section class="map-panel">
+          <div>
+            <p class="eyebrow">意思地图</p>
+            <h2 id="groupTitle">加载中</h2>
+            <p id="groupSummary" class="summary"></p>
+            <div id="kanzenMeta" class="meta-strip"></div>
+          </div>
+          <img src="assets/grammar-map.svg" alt="语法关系图" class="map-asset">
+        </section>
+
+        <section class="panel route-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">新完全掌握式路线</p>
+              <h3>先按功能归类，再用接续和语感拆开</h3>
+            </div>
+          </div>
+          <div id="routeCards" class="route-cards"></div>
+        </section>
+
+        <section class="study-grid">
+          <article class="panel ladder-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">表达梯度</p>
+              <h3>从基础到细分语感</h3>
+            </div>
+              <button id="addExpressionBtn" class="secondary-btn compact-action" type="button" title="在当前分类添加语法条目">
+                <span aria-hidden="true">＋</span>
+                添加条目
+              </button>
+              <span id="progressPill" class="pill">0 / 0</span>
+            </div>
+            <div id="expressionLadder" class="ladder"></div>
+          </article>
+
+          <article class="panel challenge-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">翻译闯关</p>
+                <h3 id="challengeTitle">第 1 题</h3>
+              </div>
+              <div class="stepper">
+                <button id="prevChallengeBtn" type="button" title="上一题">‹</button>
+                <button id="nextChallengeBtn" type="button" title="下一题">›</button>
+              </div>
+            </div>
+
+            <div id="challengeBox" class="challenge-box"></div>
+
+            <label for="answerInput">你的日语译文</label>
+            <textarea id="answerInput" rows="5" placeholder="在这里输入你的翻译。目标是先用对句式，再追求自然。"></textarea>
+
+            <div class="button-row">
+              <button id="checkBtn" class="primary-btn" type="button">检查关键词</button>
+              <button id="showAnswerBtn" class="secondary-btn" type="button">看参考答案</button>
+              <button id="markHardBtn" class="ghost-btn" type="button">加入错题</button>
+            </div>
+
+            <div id="feedbackBox" class="feedback hidden"></div>
+          </article>
+        </section>
+
+        <section class="study-grid lower">
+          <article class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">辨析笔记</p>
+                <h3>为什么不是另一个</h3>
+              </div>
+            </div>
+            <ul id="notesList" class="notes-list"></ul>
+          </article>
+
+          <article class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">易混改写</p>
+                <h3>同义换挡练习</h3>
+              </div>
+            </div>
+            <div id="rewriteList" class="rewrite-list"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="content-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
