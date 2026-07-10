@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>日语变形规则速查 — 贝卡的紫藤日语语法翻译训练天地</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="conjugation.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Conjugation Reference</p>
+        <h1>日语变形规则速查</h1>
+      </div>
+      <div class="top-actions">
+        <a href="index.html" class="ghost-btn" id="backLink">
+          <span aria-hidden="true">←</span>
+          返回语法站
+        </a>
+        <button id="themeToggleBtn" class="theme-toggle" type="button" title="切换白天/夜间模式" aria-pressed="false">
+          <span aria-hidden="true">☾</span>
+          夜间
+        </button>
+      </div>
+    </header>
+
+    <main class="conj-app-shell">
+      <aside class="sidebar conj-sidebar" aria-label="变形分类导航">
+        <div class="panel compact">
+          <label for="conjSearch">搜索变形 / 关键词</label>
+          <input id="conjSearch" type="search" placeholder="例如：て形、可能、受身、た形">
+        </div>
+        <nav id="conjCategoryList" class="group-list"></nav>
+      </aside>
+
+      <section class="conj-workspace">
+        <div class="conj-header">
+          <div>
+            <p class="eyebrow" id="conjBreadcrumb">动词变形</p>
+            <h2 id="conjSectionTitle">全部变形规则</h2>
+            <p id="conjSectionSummary" class="summary"></p>
+          </div>
+          <span id="conjCountPill" class="pill">0 张卡片</span>
+        </div>
+        <div id="conjCardGrid" class="conj-card-grid"></div>
+      </section>
+    </main>
+
+    <script src="conjugation-data.js"></script>
+    <script src="conjugation-app.js"></script>
+  </body>
+</html>
