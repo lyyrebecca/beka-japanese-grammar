@@ -91,11 +91,27 @@ This website is useful for:
 4. Practice by translating Chinese prompts into Japanese.
 5. Use the conjugation reference page when you need a quick form check.
 
+## 离线使用与备份 / Offline Use and Backup
+
+不想通过在线网站学习，也可以下载完整的网站文件，在本机离线打开和使用：
+
+1. 下载 [完整离线文件 ZIP / Download the complete ZIP](https://github.com/lyyrebecca/beka-japanese-grammar/archive/refs/heads/main.zip)。
+2. 解压后双击打开 `index.html`，无需安装软件、无需联网、无需账号。
+3. 所有语法数据、页面样式、变形速查和图片资源都已经包含在下载包内；`conjugation.html` 可单独打开。
+4. 你的练习记录、笔记和新增条目会保存在当前浏览器和当前网站地址中。定期点击页面右上角的“备份”，保存导出的 JSON 文件；在同一台或另一台电脑打开网站后，点击“恢复”即可找回。
+
+You can also use the whole site offline:
+
+1. [Download the complete ZIP](https://github.com/lyyrebecca/beka-japanese-grammar/archive/refs/heads/main.zip).
+2. Unzip it and open `index.html` in a browser. No installation, account, or connection is required.
+3. The download contains the grammar data, styles, conjugation reference, and image assets. `conjugation.html` can be opened separately.
+4. Progress, notes, and custom entries stay in the current browser and site location. Use the **Backup** button regularly to save a JSON file, then use **Restore** to move it to another computer or recover it later.
+
 ## 隐私说明 / Privacy
 
-这个项目是纯静态网页，不需要注册账号，也不会把你的练习内容上传到服务器。学习进度、自定义语法条目、笔记和错题标记保存在你自己的浏览器本机。
+这个项目是纯静态网页，不需要注册账号，也不会把你的练习内容上传到服务器。学习进度、自定义语法条目、笔记和错题标记保存在你自己的浏览器本机。它们不会自动同步到 GitHub；请用“备份 / 恢复”功能自行保留和迁移。
 
-This is a static website. It does not require an account, and it does not upload your practice answers to a server. Your progress, custom entries, notes, and review markings are stored locally in your own browser.
+This is a static website. It does not require an account, and it does not upload your practice answers to a server. Your progress, custom entries, notes, and review markings are stored locally in your own browser. They are not automatically synced to GitHub, so use Backup / Restore when you want to keep or move them.
 
 ## 技术栈 / Tech Stack
 
@@ -104,6 +120,7 @@ This is a static website. It does not require an account, and it does not upload
 - JavaScript
 - GitHub Pages
 - Browser `localStorage`
+- JSON backup and restore for local learning records
 
 ## 搜索关键词 / Search Keywords
 
@@ -113,6 +130,7 @@ This is a static website. It does not require an account, and it does not upload
 
 - Live site: [https://lyyrebecca.github.io/beka-japanese-grammar/](https://lyyrebecca.github.io/beka-japanese-grammar/)
 - Conjugation reference: [https://lyyrebecca.github.io/beka-japanese-grammar/conjugation.html](https://lyyrebecca.github.io/beka-japanese-grammar/conjugation.html)
+- Offline ZIP: [https://github.com/lyyrebecca/beka-japanese-grammar/archive/refs/heads/main.zip](https://github.com/lyyrebecca/beka-japanese-grammar/archive/refs/heads/main.zip)
 
 ## License
 
