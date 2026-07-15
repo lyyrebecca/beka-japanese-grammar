@@ -51,6 +51,8 @@ function bindEvents() {
     saveProgress();
   });
   $("addExpressionBtn").addEventListener("click", () => openExpressionEditor("add"));
+  $("exportBackupBtn").addEventListener("click", exportBackup);
+  $("importBackupBtn").addEventListener("click", importBackup);
   $("resetProgressBtn").addEventListener("click", () => {
     if (!confirm("确定清空本机练习记录吗？新增条目、修改和笔记不会被删除。")) return;
     state.progress = { ...EMPTY_PROGRESS, lastGroup: state.groupId };
@@ -87,6 +89,55 @@ function loadCustomContent() {
 
 function saveCustomContent() {
   localStorage.setItem(CUSTOM_CONTENT_KEY, JSON.stringify(state.custom));
+}
+
+function exportBackup() {
+  const backup = {
+    app: "beka-japanese-grammar",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    progress: state.progress,
+    custom: state.custom,
+    theme: state.theme
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `beka-japanese-grammar-backup-${backup.exportedAt.slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function importBackup() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json,.json";
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      const backup = JSON.parse(await file.text());
+      if (backup.app !== "beka-japanese-grammar" || backup.version !== 1) {
+        throw new Error("invalid backup");
+      }
+      if (!confirm("导入会覆盖当前浏览器中的学习记录、笔记和自定义条目，确定继续吗？")) return;
+      state.progress = { ...EMPTY_PROGRESS, ...(backup.progress || {}) };
+      state.custom = { ...structuredClone(EMPTY_CUSTOM), ...(backup.custom || {}) };
+      if (backup.theme === "day" || backup.theme === "night") state.theme = backup.theme;
+      saveProgress();
+      saveCustomContent();
+      saveTheme();
+      state.groupId = state.progress.lastGroup || GRAMMAR_GROUPS[0].id;
+      state.challengeIndex = 0;
+      applyTheme();
+      render();
+      alert("备份已恢复。");
+    } catch {
+      alert("这不是可用的学习备份文件。请导入由本网站“备份”按钮导出的 JSON 文件。");
+    }
+  });
+  input.click();
 }
 
 function loadTheme() {
