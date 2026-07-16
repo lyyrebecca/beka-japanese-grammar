@@ -40,6 +40,15 @@ This project is designed to help learners choose grammar by meaning, not only me
 - **变形规则速查**：提供基本形、礼貌形、否定形、过去形、て形、条件形、可能/受身/使役等规则参考。
 - **纯静态网页**：HTML/CSS/JavaScript 实现，可直接通过 GitHub Pages 访问。
 
+## v2 更新：语气与文体徽章 / Usage Badges
+
+- 卡片顶部新增四种圆形徽章：红圈「消」表示消极/负面倾向，绿圈「积」表示积极/正面倾向，黄圈「口」表示口语/日常会话，蓝圈「书」表示书面/正式表达。
+- 内置知识点只在已有语感、标签或来源信息给出明确线索时才预标注；证据不足的卡片保持空白，避免把普通表达误读成褒贬或固定文体。
+- 新增语法条目或修改知识卡片时，可独立勾选四类徽章。设置会保存在浏览器本机的 `jp-grammar-custom-content-v1` 中。
+- 页面“备份 / 恢复”会携带学习进度、笔记、自定义条目及徽章设置；v2 仍可导入 v1 备份 JSON。
+
+The v2 release adds four optional badges to make usage cues visible at a glance: negative, positive, spoken, and written/formal. Built-in cards are labelled conservatively, and custom cards can choose each badge independently. Everything remains browser-local and travels with Backup / Restore files.
+
 ## 数据规模 / Content Scale
 
 当前版本包含：

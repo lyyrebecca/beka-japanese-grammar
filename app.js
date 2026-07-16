@@ -94,7 +94,7 @@ function saveCustomContent() {
 function exportBackup() {
   const backup = {
     app: "beka-japanese-grammar",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     progress: state.progress,
     custom: state.custom,
@@ -118,7 +118,7 @@ function importBackup() {
     if (!file) return;
     try {
       const backup = JSON.parse(await file.text());
-      if (backup.app !== "beka-japanese-grammar" || backup.version !== 1) {
+      if (backup.app !== "beka-japanese-grammar" || ![1, 2].includes(backup.version)) {
         throw new Error("invalid backup");
       }
       if (!confirm("导入会覆盖当前浏览器中的学习记录、笔记和自定义条目，确定继续吗？")) return;
@@ -280,6 +280,7 @@ function searchableExpressionText(item) {
     item.sourceBook,
     item.sourceLesson,
     item.userNote,
+    ...usageFlagLabels(item.usageFlags),
     ...(item.tags || [])
   ].join(" ").toLowerCase();
 }
@@ -338,6 +339,7 @@ function renderGroup() {
 function renderExpressions(group, expressions) {
   $("expressionLadder").innerHTML = expressions.length ? expressions.map((item) => {
     const profile = usageProfile(item);
+    const usageBadges = renderUsageBadges(item.usageFlags);
     const note = item.userNote ? `<div class="user-note"><strong>我的笔记</strong><p>${escapeHtml(item.userNote)}</p></div>` : "";
     const deleteButton = item._userAdded ? `<button class="icon-btn danger" type="button" data-action="delete" data-id="${escapeAttr(item.id)}" title="删除自定义条目" aria-label="删除自定义条目">×</button>` : "";
     const restoreButton = item._customized && !item._userAdded ? `<button class="icon-btn" type="button" data-action="restore" data-id="${escapeAttr(item.id)}" title="恢复内置内容" aria-label="恢复内置内容">↺</button>` : "";
@@ -353,6 +355,7 @@ function renderExpressions(group, expressions) {
         <span class="level">${escapeHtml(item.level)}</span>
         ${item.source ? `<span class="source-tag">${escapeHtml(item.source)}</span>` : ""}
         ${item._userAdded ? `<span class="source-tag">我添加的</span>` : ""}
+        ${usageBadges}
         <strong lang="ja">${renderJapaneseText(item.pattern)}</strong>
       </div>
       <p>${escapeHtml(item.meaning)}</p>
@@ -375,6 +378,23 @@ function renderExpressions(group, expressions) {
   $("expressionLadder").querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleCardAction(group, button.dataset.action, button.dataset.id));
   });
+}
+
+const USAGE_BADGES = {
+  negative: { character: "消", label: "消极 / 负面倾向" },
+  positive: { character: "积", label: "积极 / 正面倾向" },
+  spoken: { character: "口", label: "口语 / 日常会话" },
+  written: { character: "书", label: "书面 / 正式表达" }
+};
+
+function renderUsageBadges(flags = {}) {
+  return `<span class="usage-badges">${Object.entries(USAGE_BADGES).filter(([key]) => flags[key]).map(([key, badge]) => `
+    <span class="usage-badge usage-badge--${key}" title="${badge.label}" aria-label="${badge.label}">${badge.character}</span>
+  `).join("")}</span>`;
+}
+
+function usageFlagLabels(flags = {}) {
+  return Object.entries(USAGE_BADGES).filter(([key]) => flags[key]).map(([, badge]) => badge.label);
 }
 
 function handleCardAction(group, action, id) {
@@ -513,6 +533,7 @@ function openExpressionEditor(mode, item = null) {
     sourceBook: "我添加的语法",
     sourceLesson: group.title,
     tags: [group.theme].filter(Boolean),
+    usageFlags: {},
     userNote: ""
   };
   openDialog(`
@@ -535,6 +556,7 @@ function openExpressionEditor(mode, item = null) {
         ${inputField("sourceLesson", "来源课次", data.sourceLesson)}
       </div>
       ${inputField("tags", "标签（用逗号分隔）", (data.tags || []).join("，"))}
+      ${usageFlagFields(data.usageFlags)}
       ${textareaField("userNote", "我的笔记", data.userNote || "")}
       <footer>
         <button class="secondary-btn" type="button" data-close-dialog>取消</button>
@@ -613,8 +635,20 @@ function expressionPayloadFromForm(form) {
     sourceBook: String(form.get("sourceBook") || "").trim(),
     sourceLesson: String(form.get("sourceLesson") || "").trim(),
     tags,
+    usageFlags: Object.fromEntries(Object.keys(USAGE_BADGES).map((key) => [key, form.get(`usage-${key}`) === "on"])),
     userNote: String(form.get("userNote") || "").trim()
   };
+}
+
+function usageFlagFields(flags = {}) {
+  return `<fieldset class="usage-flag-fields">
+    <legend>语气 / 文体徽章（勾选后显示在卡片顶部）</legend>
+    ${Object.entries(USAGE_BADGES).map(([key, badge]) => `<label class="usage-flag-option usage-flag-option--${key}">
+      <input type="checkbox" name="usage-${key}"${flags[key] ? " checked" : ""}>
+      <span class="usage-badge usage-badge--${key}" aria-hidden="true">${badge.character}</span>
+      <span>${badge.label}</span>
+    </label>`).join("")}
+  </fieldset>`;
 }
 
 function restoreBuiltInExpression(id) {

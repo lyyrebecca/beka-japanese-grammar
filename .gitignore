@@ -1,0 +1,6 @@
+.DS_Store
+*.tgz
+dist/
+.openai/
+outputs/
+beka-japanese-grammar-backup-*.json

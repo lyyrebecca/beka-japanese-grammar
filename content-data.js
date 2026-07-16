@@ -583,9 +583,10 @@ addFullKanzenCatalogCoverage();
 normalizeKanzenLibrary();
 improveExampleLibrary();
 upgradeChallengeLibrary();
+applyUsageFlagSchema();
 
 function expression(level, pattern, meaning, connection, nuance, example, translation) {
-  return { level, pattern, meaning, connection, nuance, example, translation, source: "新完式整理" };
+  return { level, pattern, meaning, connection, nuance, example, translation, source: "新完式整理", usageFlags: deriveUsageFlags({ pattern, meaning, nuance, tags: [] }) };
 }
 
 function challenge(prompt, target, keywords, sample, note, meta = {}) {
@@ -1039,8 +1040,28 @@ function expressionFromBook(level, pattern, meaning, connection, nuance, example
     source: "新完全掌握提取",
     sourceBook: `新完全掌握日语语法书 ${sourceBook}`,
     sourceLesson,
-    tags
+    tags,
+    usageFlags: deriveUsageFlags({ pattern, meaning, nuance, tags })
   };
+}
+
+function deriveUsageFlags({ pattern = "", meaning = "", nuance = "", tags = [] }) {
+  const text = [pattern, meaning, nuance, ...(tags || [])].join(" ");
+  return {
+    // Pre-label only when the card itself gives an unambiguous usage cue.
+    negative: /消极|负面|不满|遗憾|责备|批评|言い訳|不良过程|坏结果|失误|常负面|多负面/.test(text),
+    positive: /积极|正面|多亏|感谢|祝福|庆幸|好结果/.test(text),
+    spoken: /口语|日常会话|日常用语|聊天|随意说法|较口语/.test(text),
+    written: /书面|正式|文章|论文|公文|通知|新闻|制度性|书写语言|硬朗|文语/.test(text)
+  };
+}
+
+function applyUsageFlagSchema() {
+  for (const group of GRAMMAR_GROUPS) {
+    for (const item of group.expressions) {
+      item.usageFlags ||= deriveUsageFlags(item);
+    }
+  }
 }
 
 function normalizeKanzenLibrary() {
