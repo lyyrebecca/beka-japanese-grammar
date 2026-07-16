@@ -178,9 +178,13 @@ function mergedGroups() {
 function mergeExpression(item, userAdded) {
   const edit = state.custom.edits[item.id] || {};
   const note = state.custom.notes[item.id] ?? edit.userNote ?? item.userNote ?? "";
-  return {
+  const merged = {
     ...item,
-    ...edit,
+    ...edit
+  };
+  return {
+    ...merged,
+    usageFlags: normalizeUsageFlags(merged),
     userNote: note,
     _userAdded: userAdded,
     _customized: Boolean(userAdded || Object.keys(edit).length || note)
@@ -386,6 +390,31 @@ const USAGE_BADGES = {
   spoken: { character: "口", label: "口语 / 日常会话" },
   written: { character: "书", label: "书面 / 正式表达" }
 };
+
+function normalizeUsageFlags(item = {}) {
+  const current = item.usageFlags || {};
+  return {
+    ...deriveUsageFlags(item),
+    ...Object.fromEntries(Object.keys(USAGE_BADGES).map((key) => [key, Boolean(current[key])]))
+  };
+}
+
+function deriveUsageFlags(item = {}) {
+  const text = [
+    item.pattern,
+    item.meaning,
+    item.nuance,
+    item.sourceBook,
+    item.sourceLesson,
+    ...(item.tags || [])
+  ].join(" ");
+  return {
+    negative: /消极|负面|不满|遗憾|责备|批评|言い訳|不良过程|坏结果|失误|常负面|多负面|负担|痛苦/.test(text),
+    positive: /积极|正面|多亏|感谢|祝福|庆幸|好结果/.test(text),
+    spoken: /口语|日常会话|日常用语|聊天|随意说法|较口语/.test(text),
+    written: /书面|正式|文章|论文|公文|通知|新闻|制度性|书写语言|硬朗|文语|商务/.test(text)
+  };
+}
 
 function renderUsageBadges(flags = {}) {
   return `<span class="usage-badges">${Object.entries(USAGE_BADGES).filter(([key]) => flags[key]).map(([key, badge]) => `
