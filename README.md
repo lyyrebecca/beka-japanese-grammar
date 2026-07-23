@@ -17,9 +17,13 @@
 - 新增语法条目或修改知识卡片时，可分别勾选四类徽章；设置会保存在浏览器本机的 `jp-grammar-custom-content-v1` 中。
 - 使用页面的“备份”可导出学习进度、笔记、自定义条目和徽章设置；“恢复备份”支持导入 v1 与 v2 备份 JSON。自定义内容只保存在当前浏览器，清除浏览器数据前请先备份。
 
-公开页面入口：
+## 在线访问
 
-- `index.html`
-- `conjugation.html`
+直接访问：<https://lyyrebecca.github.io/beka-japanese-grammar/>
 
-发布到 GitHub Pages 时，选择从 `main` 分支根目录发布即可。
+页面入口：
+
+- 主页：<https://lyyrebecca.github.io/beka-japanese-grammar/>
+- 变形规则速查：<https://lyyrebecca.github.io/beka-japanese-grammar/conjugation.html>
+
+项目仓库：<https://github.com/lyyrebecca/beka-japanese-grammar>
