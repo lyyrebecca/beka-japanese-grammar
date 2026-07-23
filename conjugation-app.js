@@ -220,35 +220,58 @@ function bindEvents() {
 /* ── 过滤 ── */
 
 function filteredCards() {
-  return CONJUGATION_CARDS.filter((card) => {
+  const cards = CONJUGATION_CARDS.filter((card) => {
     const matchesCategory = !state.categoryId || card.category === state.categoryId;
     const matchesSubcategory = !state.subcategoryId || card.subcategory === state.subcategoryId;
     const matchesQuery = !state.query || cardMatchesQuery(card);
     return matchesCategory && matchesSubcategory && matchesQuery;
   });
+  if (!state.query) return cards;
+  return cards.sort((a, b) => cardSearchScore(b) - cardSearchScore(a));
 }
 
 function cardMatchesQuery(card) {
-  const searchable = [
+  return cardSearchScore(card) > 0;
+}
+
+function cardSearchScore(card) {
+  const query = state.query;
+  const compactQuery = query.replace(/[\s ・〜…]+/g, "");
+  if (!compactQuery) return 1;
+  const aliases = (card.aliases || []).map((item) => String(item).toLowerCase());
+  const primary = [
     card.title,
     card.category,
     card.subcategory,
     card.level,
     card.formation,
-    card.example,
-    card.exampleTranslation,
+    card.sourceNote,
+    ...(card.badges || []),
     ...(card.notes || []),
     ...flatTableText(card.table)
   ].join(" ").toLowerCase();
-  const compactHaystack = searchable.replace(/[\s ・〜…]+/g, "");
-  const compactQuery = state.query.replace(/[\s ・〜…]+/g, "");
-  if (compactHaystack.includes(compactQuery)) return true;
-  const tokens = state.query
+  const exampleText = [card.example, card.exampleTranslation].join(" ").toLowerCase();
+  const compactPrimary = primary.replace(/[\s ・〜…]+/g, "");
+  const compactExample = exampleText.replace(/[\s ・〜…]+/g, "");
+  const compactAliases = aliases.map((item) => item.replace(/[\s ・〜…]+/g, ""));
+  let score = 0;
+  if (String(card.title || "").toLowerCase().replace(/[\s ・〜…]+/g, "").includes(compactQuery)) score += 120;
+  if (compactAliases.includes(compactQuery)) score += 110;
+  if (compactAliases.some((alias) => alias.includes(compactQuery) || compactQuery.includes(alias))) score += 80;
+  if (compactPrimary.includes(compactQuery)) score += 45;
+  if (compactExample.includes(compactQuery)) score += 6;
+  const tokens = query
     .toLowerCase()
     .split(/[\s 、，。．,.:：;；/／|｜]+/)
     .map((t) => t.trim())
     .filter((t) => t.length >= 2);
-  return tokens.some((token) => compactHaystack.includes(token.replace(/[\s ・〜…]+/g, "")));
+  for (const token of tokens) {
+    const compactToken = token.replace(/[\s ・〜…]+/g, "");
+    if (compactAliases.some((alias) => alias.includes(compactToken))) score += 28;
+    if (compactPrimary.includes(compactToken)) score += 12;
+    if (compactExample.includes(compactToken)) score += 2;
+  }
+  return score;
 }
 
 function flatTableText(table) {
@@ -332,6 +355,10 @@ function renderCards() {
 function renderCard(card) {
   const table = renderTable(card.table);
   const notes = (card.notes || []).map((note) => `<p>${escapeHtml(note)}</p>`).join("");
+  const badges = (card.badges || []).map((badge) => `<span>${escapeHtml(badge)}</span>`).join("");
+  const sourceNote = card.sourceNote
+    ? `<p class="conj-source-note">来源：${escapeHtml(card.sourceNote)}</p>`
+    : "";
   const exampleHtml = card.example
     ? `<div class="conj-example">
         <p lang="ja">${renderJapaneseText(card.example)}</p>
@@ -346,10 +373,12 @@ function renderCard(card) {
         <span class="conj-cat-tag">${escapeHtml(card.subcategory)}</span>
         <h3>${escapeHtml(card.title)}</h3>
       </div>
+      ${badges ? `<div class="conj-badges">${badges}</div>` : ""}
       <div class="conj-formation"><strong>规则：</strong>${escapeHtml(card.formation)}</div>
       ${table}
       ${exampleHtml}
       ${notes ? `<div class="conj-notes">${notes}</div>` : ""}
+      ${sourceNote}
     </article>`;
 }
 

@@ -580,12 +580,15 @@ GRAMMAR_GROUPS.push(
 addKanzenBookExtracts();
 applyKanzenEnhancements();
 addFullKanzenCatalogCoverage();
+addGaokaoGrammarSupplements();
 normalizeKanzenLibrary();
+auditConnectionAndCollocationDetails();
 improveExampleLibrary();
 upgradeChallengeLibrary();
+applyUsageFlagSchema();
 
 function expression(level, pattern, meaning, connection, nuance, example, translation) {
-  return { level, pattern, meaning, connection, nuance, example, translation, source: "新完式整理" };
+  return { level, pattern, meaning, connection, nuance, example, translation, source: "新完式整理", usageFlags: deriveUsageFlags({ pattern, meaning, nuance, tags: [] }) };
 }
 
 function challenge(prompt, target, keywords, sample, note, meta = {}) {
@@ -1039,8 +1042,872 @@ function expressionFromBook(level, pattern, meaning, connection, nuance, example
     source: "新完全掌握提取",
     sourceBook: `新完全掌握日语语法书 ${sourceBook}`,
     sourceLesson,
-    tags
+    tags,
+    usageFlags: deriveUsageFlags({ pattern, meaning, nuance, tags })
   };
+}
+
+function expressionFromGaokao({ level, pattern, meaning, connection, nuance, example, translation, sourceBook, sourceLesson, tags = [], collocation = "", searchAliases = [] }) {
+  return {
+    level,
+    pattern,
+    meaning,
+    connection,
+    collocation,
+    nuance,
+    example,
+    translation,
+    source: "高考语法书提取",
+    sourceBook,
+    sourceLesson,
+    tags,
+    searchAliases,
+    usageFlags: deriveUsageFlags({ pattern, meaning, nuance, tags })
+  };
+}
+
+function addGaokaoGrammarSupplements() {
+  const rows = [
+    {
+      groupId: "purpose",
+      level: "N4",
+      pattern: "ように（目的）",
+      meaning: "为了能；为了不",
+      connection: "非意志动词辞书形 / ない形 + ように；意志动词可能形辞书形 / ない形 + ように",
+      collocation: "よく見えるように；できるように；忘れないように；日本語が上手になるように",
+      nuance: "表示期待某状态实现，前后主语可以一致也可以不一致；与ために不同，前项通常不是单纯意志动作。",
+      example: "よく見えるように、字を大きく書きました。",
+      translation: "为了能看得更清楚，把字写大了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "ように·ために",
+      tags: ["目的", "高考", "特殊接续"],
+      searchAliases: ["为了能", "以便", "you ni", "youni"]
+    },
+    {
+      groupId: "purpose",
+      level: "N4",
+      pattern: "ために（目的）",
+      meaning: "为了",
+      connection: "意志动词辞书形 + ために；名词 + のために",
+      collocation: "留学するために；健康のために；合格するために",
+      nuance: "表目的时前后主语通常必须一致，前项是有意志地要做的事情；主语不一致时更容易解释为原因。",
+      example: "日本へ留学するために、高校から日本語を勉強し始めました。",
+      translation: "为了去日本留学，从高中时代开始学习日语。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "ように·ために",
+      tags: ["目的", "高考", "特殊接续"],
+      searchAliases: ["为了", "tameni", "tame ni"]
+    },
+    {
+      groupId: "guess",
+      level: "N4",
+      pattern: "そうだ（样态）",
+      meaning: "看起来；快要",
+      connection: "动词ます形去ます + そうだ；い形容词词干 + そうだ；な形容词词干 + そうだ；特殊：いい→よさそう、ない→なさそう",
+      collocation: "そうな + 名词；そうに + 动词；降りそうにない / 降りそうもない；おいしくなさそうだ / おいしそうではない",
+      nuance: "根据外观、视觉印象或当下预感判断；通常不能直接推量过去事项，过去情况要用ようだ/らしい等。",
+      example: "このリンゴはおいしそうです。",
+      translation: "这个苹果看起来很好吃。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "よう·みたい·らしい·そう",
+      tags: ["样态", "高考", "特殊接续"],
+      searchAliases: ["看起来", "好像要", "souda", "sou da", "soda"]
+    },
+    {
+      groupId: "hearsay",
+      level: "N4",
+      pattern: "そうだ（伝聞）",
+      meaning: "听说",
+      connection: "普通形 + そうだ；な形容词/名词保留だ + そうだ",
+      collocation: "天気予報によると...そうだ；話では...そうだ；...だそうです",
+      nuance: "表示转述听来的消息，不使用样态的そうな/そうに活用；注意与ます形/词干接续的样态そうだ区分。",
+      example: "天気予報によると、明日の午後台風が近づいてくるそうです。",
+      translation: "据天气预报说明天下午台风会靠近。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "Unit9 表示主张、断定、传闻的句型",
+      tags: ["传闻", "高考", "OCR核验"],
+      searchAliases: ["听说", "据说", "souda", "sou da"]
+    },
+    {
+      groupId: "hearsay",
+      level: "N4",
+      pattern: "ようだ",
+      meaning: "好像；像……一样",
+      connection: "普通形 + ようだ；名词 + のようだ；な形容词 + なようだ",
+      collocation: "ような + 名词；ように + 动词/形容词；どうも...ようだ；まるで...ようだ",
+      nuance: "可表示基于五官、感觉的主观判断，也可表示比喻；活用方式近似な形容词。",
+      example: "お人形のように可愛いです。",
+      translation: "像人偶一样可爱。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "比况助动词 ようだ、みたいだ",
+      tags: ["比况", "推测", "高考"],
+      searchAliases: ["好像", "像", "youda", "you da", "yoda"]
+    },
+    {
+      groupId: "hearsay",
+      level: "N4",
+      pattern: "みたいだ",
+      meaning: "好像；像……一样",
+      connection: "动词普通形 / い形容词普通形 / な形容词词干 / 名词 + みたいだ",
+      collocation: "みたいな + 名词；みたいに + 动词/形容词；どうも...みたいだ；まるで...みたいだ",
+      nuance: "与ようだ意思接近，但更口语；正式场合一般优先用ようだ。",
+      example: "神戸みたいな町に住みたいです。",
+      translation: "我想住在像神户那样的城市。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "比况助动词 ようだ、みたいだ",
+      tags: ["比况", "口语", "高考"],
+      searchAliases: ["像", "好像", "mitai", "mitaida"]
+    },
+    {
+      groupId: "hearsay",
+      level: "N4",
+      pattern: "らしい",
+      meaning: "似乎；有……典型特征",
+      connection: "普通形 + らしい；名词 + らしい",
+      collocation: "いかにも...らしい；男らしい；学生らしい；本当らしい",
+      nuance: "可根据外部信息或传闻判断，也可表示“具有该名词应有的典型样子”；活用同い形容词。",
+      example: "彼はどんな困難も恐れず、本当に男らしい。",
+      translation: "他不怕任何困难，真的很有男子气概。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "よう·みたい·らしい·そう",
+      tags: ["传闻", "典型性", "高考"],
+      searchAliases: ["似乎", "像样", "rashii"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "あげる / さしあげる / やる",
+      meaning: "给别人；为别人做",
+      connection: "授予者 + は/が + 接受者 + に + 物 + を + あげる/さしあげる/やる；动词て形 + あげる/さしあげる/やる",
+      collocation: "弟にゲーム機をあげる；課長にお土産をさしあげる；花に水をやる；てあげる / てさしあげる",
+      nuance: "主语是自己或己方给别人；さしあげる用于给上级，やる多用于下级、晚辈或动植物。",
+      example: "母は毎日庭の花に水をやります。",
+      translation: "妈妈每天给院子里的花浇水。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "第6章 授受动词",
+      tags: ["授受", "敬语", "高考"],
+      searchAliases: ["给", "ageru", "sashiageru", "yaru"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "くれる / くださる",
+      meaning: "别人给我方",
+      connection: "授予者 + は/が +（我方接受者 + に）+ 物 + を + くれる/くださる；动词て形 + くれる/くださる",
+      collocation: "姉がかばんをくれる；先生が辞書をくださる；手伝ってくれる；てくださる",
+      nuance: "主语是别人，接受者必须是说话人自己或我方人员；くださる是尊敬语。",
+      example: "姉がブランドのかばんをくれました。",
+      translation: "姐姐送了我一个名牌包。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "第6章 授受动词",
+      tags: ["授受", "恩惠", "高考"],
+      searchAliases: ["给我", "kureru", "kudasaru"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "もらう / いただく",
+      meaning: "从别人那里得到；请别人做",
+      connection: "接受者 + は/が + 授予者 + に/から + 物 + を + もらう/いただく；动词て形 + もらう/いただく",
+      collocation: "先生に辞書をいただく；友達に手伝ってもらう；説明していただく",
+      nuance: "主语是得到恩惠的一方；いただく是谦让语。授予者为人物时に/から都可，但组织、机关等来源常用から。",
+      example: "友だちに日本語の作文を見てもらいました。",
+      translation: "请朋友帮我看了日语作文。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "第6章 授受动词",
+      tags: ["授受", "谦让", "高考"],
+      searchAliases: ["得到", "请别人", "morau", "itadaku"]
+    },
+    {
+      groupId: "obligation",
+      level: "N4",
+      pattern: "なければならない",
+      meaning: "必须",
+      connection: "动词ない形去ない + なければならない",
+      collocation: "着なければならない；起きなければならない；口语：なきゃならない",
+      nuance: "从社会常识、规则或义务看有必要；偏一般性判断。",
+      example: "学校で制服を着なければなりません。",
+      translation: "在学校必须穿制服。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "“必须”相关语法",
+      tags: ["必须", "高考", "特殊接续"],
+      searchAliases: ["必须", "不得不", "nakereba naranai"]
+    },
+    {
+      groupId: "difficulty",
+      level: "N3",
+      pattern: "てたまらない",
+      meaning: "非常……；……得受不了",
+      connection: "て形 + たまらない；い形容词くて + たまらない；な形容词で + たまらない",
+      collocation: "暑くてたまらない；心配でたまらない；第三人称感情：たまらないようだ/らしい/のだ",
+      nuance: "强调心情或感觉强到无法忍受；表达第三人称感情时要加ようだ、らしい、のだ等；不与自发动词搭配。",
+      example: "クーラーが壊れて、暑くてたまらないです。",
+      translation: "空调坏了，热得受不了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "“无法忍受”相关语法",
+      tags: ["无法忍受", "高考", "特殊接续"],
+      searchAliases: ["受不了", "tamaranai", "te tamaranai"]
+    },
+    {
+      groupId: "limitation",
+      level: "N3",
+      pattern: "限りでは",
+      meaning: "据……范围来看",
+      connection: "动词辞书形/た形 + 限りでは；名词 + の限りでは",
+      collocation: "見る限りでは；聞いた限りでは；データを見る限りでは",
+      nuance: "限定判断依据的范围，常译为“就……来看”。",
+      example: "データを見るかぎりでは、全てが順調らしいです。",
+      translation: "从数据来看，一切似乎都很顺利。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "「限る」相关语法",
+      tags: ["限定", "范围", "高考"],
+      searchAliases: ["从来看", "kagiri dewa", "限る"]
+    },
+    {
+      groupId: "prohibition",
+      level: "N4",
+      pattern: "てはいけない",
+      meaning: "不可以；禁止",
+      connection: "动词て形 + はいけない",
+      collocation: "食べてはいけない；肉ばかり食べてはいけません",
+      nuance: "明确禁止。口语中常约音为ちゃいけない/じゃいけない。",
+      example: "いくら好きでも、肉ばかり食べてはいけません。",
+      translation: "再怎么喜欢，也不能光吃肉。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "助词・句型练习",
+      tags: ["禁止", "高考"],
+      searchAliases: ["不可以", "禁止", "tewa ikenai"]
+    },
+    {
+      groupId: "topic",
+      level: "N5",
+      pattern: "こ・そ・あ・ど",
+      meaning: "这/那/那边/哪边系列指示词",
+      connection: "これ/それ/あれ/どれ；この/その/あの/どの + 名词；こう/そう/ああ/どう + 用言",
+      collocation: "この本；そんなこと；こう思う；そうですね；どのぐらい",
+      nuance: "按说话人与听话人的距离、共同认知和上下文指代选择。指代前文内容时常用そう/その。",
+      example: "そんなことを言わないで、もう一度話し合いましょう。",
+      translation: "不要那样说，我们再谈一次吧。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "代词・指示代词",
+      tags: ["代词", "指示词", "高考"],
+      searchAliases: ["指示词", "代词", "kosoado"]
+    },
+    {
+      groupId: "topic",
+      level: "N5",
+      pattern: "疑问词 + か / も / でも",
+      meaning: "某；都；无论/随便",
+      connection: "疑问词 + か；疑问词 + も + 否定/肯定；疑问词 + でも",
+      collocation: "誰か；何もない；どこでも；いつでも；何か飲みたい",
+      nuance: "疑问词与助词结合会变成不定、全面否定/肯定或任意选择，不能只按疑问句理解。",
+      example: "何か飲みたいものがありますか。",
+      translation: "有什么想喝的吗？",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "疑问词",
+      tags: ["疑问词", "高考", "助词"],
+      searchAliases: ["疑问词", "不定代词", "dareka", "nanimo", "dokodemo"]
+    },
+    {
+      groupId: "degree",
+      level: "N4",
+      pattern: "ずつ",
+      meaning: "每……；一点点",
+      connection: "数量词 / 表示少量的副词 + ずつ",
+      collocation: "一人ずつ；少しずつ；二つずつ",
+      nuance: "表示等量分配或同量反复，也可表示逐渐变化。",
+      example: "毎日少しずつ日本語を勉強しています。",
+      translation: "每天一点点学习日语。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "副助词",
+      tags: ["副助词", "数量", "高考"],
+      searchAliases: ["每", "一点点", "zutsu"]
+    },
+    {
+      groupId: "sentence_end",
+      level: "N5",
+      pattern: "ね / ねえ",
+      meaning: "啊；呢；确认对方同意",
+      connection: "句末 + ね/ねえ",
+      collocation: "そうですね；暑いですね；いい天気ですね",
+      nuance: "表示感叹、确认或征求同意；语气柔和，常用于会话。",
+      example: "暑いですね。エアコンをつけましょう。",
+      translation: "好热啊，把空调打开吧。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "语气助词",
+      tags: ["语气助词", "口语", "高考"],
+      searchAliases: ["确认", "感叹", "ne"]
+    },
+    {
+      groupId: "sentence_end",
+      level: "N4",
+      pattern: "かな / かしら",
+      meaning: "是不是呢；不知道是否",
+      connection: "普通形 / 名词 / な形容词词干 + かな・かしら",
+      collocation: "どうかな；本当かな；来るかしら",
+      nuance: "表示自问、疑问或不确定；かしら多带柔和语气。",
+      example: "明日は晴れるかな。",
+      translation: "明天会晴吗？",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "语气助词",
+      tags: ["语气助词", "疑问", "高考"],
+      searchAliases: ["自问", "不确定", "kana", "kashira"]
+    },
+    {
+      groupId: "sentence_end",
+      level: "N4",
+      pattern: "な / なあ",
+      meaning: "啊；不要……",
+      connection: "感叹：用言终止形 + な/なあ；禁止：动词辞书形 + な",
+      collocation: "うれしいな；早く来るといいなあ；行くな",
+      nuance: "读法和语境不同会形成感叹或禁止。禁止的な接动词辞书形，语气直接。",
+      example: "夏休みが早く来るといいなあ。",
+      translation: "暑假早点来就好了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "语气助词",
+      tags: ["语气助词", "禁止", "高考"],
+      searchAliases: ["感叹", "禁止", "naa"]
+    },
+    {
+      groupId: "addition",
+      level: "N4",
+      pattern: "合う",
+      meaning: "互相；共同",
+      connection: "动词ます形去ます + 合う",
+      collocation: "話し合う；助け合う；見せ合う",
+      nuance: "表示动作相互进行或共同进行。",
+      example: "分からないところを友達と教え合いました。",
+      translation: "和朋友互相教了不懂的地方。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["复合动词", "高考"],
+      searchAliases: ["互相", "au"]
+    },
+    {
+      groupId: "degree",
+      level: "N4",
+      pattern: "すぎる",
+      meaning: "过于……；太……",
+      connection: "动词ます形去ます + すぎる；い形容词去い + すぎる；な形容词词干 + すぎる",
+      collocation: "食べすぎる；大きすぎる；静かすぎる；なさすぎる",
+      nuance: "表示程度超过合适范围，多带负面评价。ない接续时常见なさすぎる，也可见なすぎる。",
+      example: "昨日は食べすぎて、お腹が痛くなりました。",
+      translation: "昨天吃太多，肚子疼了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "动词ます形系列语法",
+      tags: ["复合动词", "程度", "高考", "特殊接续"],
+      searchAliases: ["太", "过于", "sugiru"]
+    },
+    {
+      groupId: "change",
+      level: "N4",
+      pattern: "始める / 出す",
+      meaning: "开始……；突然开始……",
+      connection: "动词ます形去ます + 始める/出す",
+      collocation: "勉強し始める；雨が降り出す；泣き出す",
+      nuance: "始める强调开始，出す常强调突然发生或状态显现。",
+      example: "急に雨が降り出しました。",
+      translation: "突然下起雨来了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["复合动词", "变化", "高考"],
+      searchAliases: ["开始", "突然开始", "hajimeru", "dasu"]
+    },
+    {
+      groupId: "habit",
+      level: "N4",
+      pattern: "続ける",
+      meaning: "继续……",
+      connection: "动词ます形去ます + 続ける",
+      collocation: "勉強し続ける；歩き続ける；努力し続ける",
+      nuance: "表示同一动作或状态持续进行。注意自动词「続く」表示状态自己持续，不直接接ます形。",
+      example: "毎日、日本語を勉強し続けています。",
+      translation: "每天持续学习日语。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "动词ます形系列语法",
+      tags: ["复合动词", "持续", "高考"],
+      searchAliases: ["继续", "持续", "tsuzukeru"]
+    },
+    {
+      groupId: "result",
+      level: "N4",
+      pattern: "終わる / 切る / 切れる / 切れない",
+      meaning: "做完；完全；能/不能完全",
+      connection: "动词ます形去ます + 終わる/切る/切れる/切れない",
+      collocation: "読み終わる；食べ切る；数え切れない；信じ切る",
+      nuance: "終わる强调动作完成；切る强调彻底完成；切れる/切れない表示能否完全做到。",
+      example: "この本を一日で読み終わりました。",
+      translation: "这本书一天就读完了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["复合动词", "结果", "高考"],
+      searchAliases: ["做完", "完全", "owaru", "kiru", "kireru"]
+    },
+    {
+      groupId: "experience",
+      level: "N4",
+      pattern: "かける",
+      meaning: "刚开始；做到一半",
+      connection: "动词ます形去ます + かける",
+      collocation: "読みかける；食べかける；壊れかける",
+      nuance: "表示动作开始后尚未完成，或状态快要发生。",
+      example: "読みかけの本を机の上に置きました。",
+      translation: "把读到一半的书放在桌上。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["复合动词", "阶段", "高考"],
+      searchAliases: ["做到一半", "kakeru"]
+    },
+    {
+      groupId: "experience",
+      level: "N4",
+      pattern: "直す",
+      meaning: "重新……",
+      connection: "动词ます形去ます + 直す",
+      collocation: "書き直す；やり直す；考え直す",
+      nuance: "表示把动作重新做一遍，常用于修正、重来。",
+      example: "間違えたところを書き直しました。",
+      translation: "把弄错的地方重写了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["复合动词", "重做", "高考"],
+      searchAliases: ["重新", "naosu"]
+    },
+    {
+      groupId: "difficulty",
+      level: "N3",
+      pattern: "抜く",
+      meaning: "做到最后；彻底……",
+      connection: "动词ます形去ます + 抜く",
+      collocation: "頑張り抜く；走り抜く；考え抜く",
+      nuance: "表示克服困难把动作坚持到最后，带完成到底的语感。",
+      example: "最後まで頑張り抜きました。",
+      translation: "坚持努力到了最后。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["复合动词", "坚持", "高考"],
+      searchAliases: ["到底", "坚持", "nuku"]
+    },
+    {
+      groupId: "means",
+      level: "N5",
+      pattern: "方",
+      meaning: "……方法",
+      connection: "动词ます形去ます + 方",
+      collocation: "読み方；書き方；使い方；行き方",
+      nuance: "把动词转成“做法/方法”的名词表达。",
+      example: "この漢字の読み方を教えてください。",
+      translation: "请告诉我这个汉字的读法。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["方法", "高考"],
+      searchAliases: ["方法", "kata"]
+    },
+    {
+      groupId: "purpose",
+      level: "N5",
+      pattern: "先",
+      meaning: "……的去处；目的地",
+      connection: "动词ます形去ます + 先",
+      collocation: "行き先；送り先；勤め先；連絡先",
+      nuance: "表示动作到达或指向的地点、对象、单位等。",
+      example: "旅行の行き先を決めました。",
+      translation: "决定了旅行目的地。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "复合动词",
+      tags: ["目的地", "高考"],
+      searchAliases: ["去处", "目的地", "saki"]
+    },
+    {
+      groupId: "state",
+      level: "N4",
+      pattern: "てある",
+      meaning: "已经……好了；结果状态存续",
+      connection: "他动词て形 + ある",
+      collocation: "書いてある；置いてある；開けてある；準備してある",
+      nuance: "强调有人有意做完动作后，其结果状态保留下来；多用于说明准备、布置、记录等。",
+      example: "机の上に本が置いてあります。",
+      translation: "桌子上放着书。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "动词て形系列",
+      tags: ["状态", "补助动词", "高考", "特殊接续"],
+      searchAliases: ["已经好了", "结果状态", "te aru", "tearu"]
+    },
+    {
+      groupId: "preparation",
+      level: "N4",
+      pattern: "ておく",
+      meaning: "事先……；暂且……",
+      connection: "动词て形 + おく",
+      collocation: "予約しておく；メモしておく；そのままにしておく；口语：ておく→とく",
+      nuance: "表示为将来做准备，或有意让某状态保持不变。口语常约音为とく/どく。",
+      example: "試験の前に、単語を復習しておきます。",
+      translation: "考试前先复习单词。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "动词て形系列",
+      tags: ["准备", "补助动词", "高考", "特殊接续"],
+      searchAliases: ["事先", "预先", "te oku", "teoku", "toku"]
+    },
+    {
+      groupId: "result",
+      level: "N4",
+      pattern: "てしまう",
+      meaning: "完了；遗憾地……",
+      connection: "动词て形 + しまう",
+      collocation: "忘れてしまう；食べてしまう；口语：てしまう→ちゃう、でしまう→じゃう",
+      nuance: "既可表示动作彻底完成，也常带遗憾、后悔、意外等语感。",
+      example: "宿題を家に忘れてしまいました。",
+      translation: "把作业忘在家里了。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "动词て形系列",
+      tags: ["结果", "补助动词", "高考", "特殊接续"],
+      searchAliases: ["完了", "遗憾", "te shimau", "teshimau", "chau", "jau"]
+    },
+    {
+      groupId: "change",
+      level: "N4",
+      pattern: "ていく / てくる",
+      meaning: "……下去/过来；逐渐变化",
+      connection: "动词て形 + いく/くる",
+      collocation: "増えていく；寒くなってきた；持っていく；持ってくる",
+      nuance: "可表示空间移动方向，也可表示时间上从现在往后发展或从过去到现在逐渐变化。",
+      example: "これからも日本語を勉強していきます。",
+      translation: "今后也会继续学日语。",
+      sourceBook: "高考日语蓝宝书 语法 OCR",
+      sourceLesson: "动词て形系列",
+      tags: ["变化", "移动", "补助动词", "高考"],
+      searchAliases: ["持续下去", "逐渐", "te iku", "te kuru", "teiku", "tekuru"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "ご / お〜ください",
+      meaning: "请您……",
+      connection: "お + 和语动词ます形去ます + ください；ご + 汉语サ变名词 + ください",
+      collocation: "お待ちください；お読みください；ご確認ください；ご利用ください",
+      nuance: "尊敬语请求形式。汉语词多用ご，和语动词多用お；外来语和部分固定词不用该形式。",
+      example: "少々お待ちください。",
+      translation: "请稍等。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "敬语",
+      tags: ["敬语", "请求", "高考", "特殊接续"],
+      searchAliases: ["请您", "gokudasai", "go kudasai", "okudasai"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "ござる / ございます",
+      meaning: "有；是（郑重语）",
+      connection: "名词/な形容词词干 + でございます；物/事 + がございます",
+      collocation: "ありがとうございます；こちらでございます；質問がございます",
+      nuance: "ございます是ござる的礼貌形，比あります/です更郑重，常用于服务、商务和正式场合。",
+      example: "質問がございます。",
+      translation: "我有问题。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "敬语",
+      tags: ["敬语", "郑重语", "高考"],
+      searchAliases: ["郑重语", "gozaimasu", "gozaru"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "いたす",
+      meaning: "做（謙让语）",
+      connection: "サ变名词 + いたす；お/ご + 动词名词化 + いたす",
+      collocation: "お願いいたします；失礼いたします；ご説明いたします",
+      nuance: "する的谦让语，用来降低自己一方的动作。礼貌形いたします最常见。",
+      example: "明日、こちらからご連絡いたします。",
+      translation: "明天由我方联系您。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "敬语",
+      tags: ["敬语", "谦让语", "高考"],
+      searchAliases: ["谦让语", "itasu", "itashimasu"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "いらっしゃる / おっしゃる / なさる",
+      meaning: "来/去/在；说；做（尊敬语）",
+      connection: "いらっしゃる=行く/来る/いる的尊敬语；おっしゃる=言う的尊敬语；なさる=する的尊敬语",
+      collocation: "先生がいらっしゃる；お名前をおっしゃる；ご利用なさる",
+      nuance: "尊敬语特殊动词，ます形分别为いらっしゃいます・おっしゃいます・なさいます。",
+      example: "先生は教室にいらっしゃいます。",
+      translation: "老师在教室。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "敬语",
+      tags: ["敬语", "尊敬语", "高考", "特殊活用"],
+      searchAliases: ["尊敬语", "irassharu", "ossharu", "nasaru"]
+    },
+    {
+      groupId: "respect",
+      level: "N4",
+      pattern: "参る",
+      meaning: "去；来（謙让语）",
+      connection: "参る是行く/来る的谦让语；礼貌形：参ります",
+      collocation: "北京へ参ります；こちらから参ります；参られる是不自然形式",
+      nuance: "用于降低自己一方的移动动作。若主语是对方，应使用いらっしゃる等尊敬语。",
+      example: "来月、北京へ参ります。",
+      translation: "下个月我去北京。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "敬语",
+      tags: ["敬语", "谦让语", "高考", "特殊接续"],
+      searchAliases: ["谦让语", "mairu", "mairimasu"]
+    },
+    {
+      groupId: "respect",
+      level: "N3",
+      pattern: "させていただく",
+      meaning: "请允许我……；承蒙让我……",
+      connection: "动词使役て形 + いただく",
+      collocation: "休ませていただく；出席させていただく；説明させていただきます",
+      nuance: "以对方许可或恩惠为前提，郑重表达自己一方的动作；过度使用会显得生硬。",
+      example: "では、説明させていただきます。",
+      translation: "那么，请允许我说明。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "授受・敬语",
+      tags: ["敬语", "授受", "请求", "高考"],
+      searchAliases: ["请允许我", "sasete itadaku", "saseteitadaku"]
+    },
+    {
+      groupId: "sentence_end",
+      level: "N5",
+      pattern: "わよ / わね",
+      meaning: "呀；呢（柔和主张/感叹）",
+      connection: "普通形句末 + わよ/わね；名词/な形容词常接だわよ/だわね或省略だ",
+      collocation: "いいわね；そうだわよ；きれいだわね",
+      nuance: "表示轻微主张、感叹或确认，传统说明中多标为女性语，现代会话需注意场合和人物语气。",
+      example: "この服、きれいだわね。",
+      translation: "这件衣服真漂亮呢。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "语气助词",
+      tags: ["语气助词", "口语", "高考"],
+      searchAliases: ["柔和主张", "感叹", "wayo", "wane"]
+    },
+    {
+      groupId: "sentence_end",
+      level: "N5",
+      pattern: "のね / のよ",
+      meaning: "啊；呢（说明/强调）",
+      connection: "普通形 + のね/のよ；名词/な形容词 + なのね/なのよ",
+      collocation: "そうなのね；行くのよ；大変なのね",
+      nuance: "在说明语气基础上加感叹、确认或强调，常见于柔和会话。",
+      example: "そうなのね。よく分かりました。",
+      translation: "原来是这样啊。我明白了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "语气助词",
+      tags: ["语气助词", "口语", "高考"],
+      searchAliases: ["说明语气", "强调", "none", "noyo"]
+    },
+    {
+      groupId: "desire",
+      level: "N3",
+      pattern: "限りだ",
+      meaning: "非常……；无比……",
+      connection: "い形容词辞书形 + 限りだ；な形容词な + 限りだ；名词の + 限りだ",
+      collocation: "うれしい限りだ；残念な限りだ；光栄の限りだ",
+      nuance: "书面或正式感较强，用于表达强烈情感。",
+      example: "皆さんに会えて、うれしい限りです。",
+      translation: "能见到大家，真是高兴极了。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "「限る」相关语法",
+      tags: ["感情", "程度", "高考"],
+      searchAliases: ["非常", "无比", "kagiri da", "kagirida"]
+    },
+    {
+      groupId: "addition",
+      level: "N3",
+      pattern: "うえに",
+      meaning: "而且；再加上",
+      connection: "动词普通形 + うえに；い形容词普通形 + うえに；な形容词な + うえに；名词の + うえに",
+      collocation: "安いうえに便利だ；雨のうえに風も強い；忙しいうえに体調も悪い",
+      nuance: "表示同方向的递进添加，后项多为评价；好事坏事都可叠加。",
+      example: "この店は安いうえに、おいしいです。",
+      translation: "这家店不仅便宜，而且好吃。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "表示递进的句型",
+      tags: ["递进", "添加", "高考", "特殊接续"],
+      searchAliases: ["而且", "再加上", "ueni", "ue ni"]
+    },
+    {
+      groupId: "result",
+      level: "N4",
+      pattern: "やっと / ようやく / とうとう / ついに / いよいよ",
+      meaning: "终于；好不容易；终于到某阶段",
+      connection: "副词，用在句中修饰后项；とうとう/ついに常与结果句共现，いよいよ多表示期待阶段临近",
+      collocation: "やっと分かった；ようやく着いた；とうとう完成した；ついに成功した；いよいよ試験だ",
+      nuance: "都可译作“终于”，但やっと/ようやく强调费时费力，とうとう/ついに强调最终结果，いよいよ强调某阶段即将开始。",
+      example: "長い練習の末、ようやく試合に勝ちました。",
+      translation: "经过长期练习，终于赢了比赛。",
+      sourceBook: "高考日语语法专项",
+      sourceLesson: "“终于”相关语法",
+      tags: ["副词", "结果", "高考", "辨析"],
+      searchAliases: ["终于", "好不容易", "yatto", "youyaku", "toutou", "tsuini", "iyoiyo"]
+    }
+  ];
+
+  const report = { added: [], merged: [] };
+  rows.forEach((row) => {
+    const group = ensureCatalogGroup(row.groupId);
+    const incoming = expressionFromGaokao(row);
+    const existing = group.expressions.find((item) => normalizePatternKey(item.pattern) === normalizePatternKey(incoming.pattern));
+    if (existing) {
+      mergeExpressionDetails(existing, incoming);
+      report.merged.push({ groupId: group.id, pattern: incoming.pattern });
+      return;
+    }
+    group.expressions.push(incoming);
+    group.notes.push(`${incoming.pattern}：${incoming.nuance}`);
+    report.added.push({ groupId: group.id, pattern: incoming.pattern });
+  });
+  globalThis.GAOKAO_SUPPLEMENT_REPORT = report;
+}
+
+function mergeExpressionDetails(target, incoming) {
+  target.connection = mergeTextField(target.connection, incoming.connection);
+  target.collocation = mergeTextField(target.collocation, incoming.collocation);
+  target.nuance = mergeTextField(target.nuance, incoming.nuance);
+  if (!target.example || target.exampleQuality === "needs-review") {
+    target.example = incoming.example;
+    target.translation = incoming.translation;
+  }
+  target.source = target.source || incoming.source;
+  target.sourceBook = mergeTextField(target.sourceBook, incoming.sourceBook, "；");
+  target.sourceLesson = mergeTextField(target.sourceLesson, incoming.sourceLesson, "；");
+  target.tags = [...new Set([...(target.tags || []), ...(incoming.tags || [])])];
+  target.searchAliases = [...new Set([...(target.searchAliases || []), ...(incoming.searchAliases || [])])];
+}
+
+function mergeTextField(current = "", next = "", separator = "；") {
+  if (!next) return current || "";
+  if (!current) return next;
+  return current.includes(next) || next.includes(current) ? current : `${current}${separator}${next}`;
+}
+
+function auditConnectionAndCollocationDetails() {
+  const patches = {
+    "そうだ": {
+      connection: "样态：动词ます形去ます/い形容词词干/な形容词词干 + そうだ；特殊：いい→よさそう、ない→なさそう。传闻：普通形 + そうだ，な形容词/名词保留だ。",
+      collocation: "样态：そうな + 名词、そうに + 动词、降りそうにない/降りそうもない、よさそう、なさそう。传闻：によると...そうだ、話では...そうだ。",
+      aliases: ["souda", "sou da", "看起来", "听说"]
+    },
+    "ようだ": {
+      connection: "普通形 + ようだ；名词 + のようだ；な形容词 + なようだ。",
+      collocation: "ような + 名词；ように + 动词/形容词；どうも...ようだ；まるで...ようだ。",
+      aliases: ["youda", "you da", "好像", "像"]
+    },
+    "みたいだ": {
+      connection: "动词普通形/い形容词普通形/な形容词词干/名词 + みたいだ。",
+      collocation: "みたいな + 名词；みたいに + 动词/形容词；どうも...みたいだ；まるで...みたいだ。",
+      aliases: ["mitai", "mitaida", "好像", "像"]
+    },
+    "らしい": {
+      connection: "普通形 + らしい；名词 + らしい。",
+      collocation: "いかにも...らしい；男らしい；学生らしい；本当らしい；らしく + 动词/形容词。",
+      aliases: ["rashii", "似乎", "典型"]
+    },
+    "ように": {
+      connection: "目的：非意志动词辞书形/ない形 + ように；意志动词可能形辞书形/ない形 + ように。比况/状态：普通形 + ように。",
+      collocation: "できるように；忘れないように；見えるように；ようになる；ようにする。",
+      aliases: ["you ni", "youni", "为了能", "以便"]
+    },
+    "ために": {
+      connection: "目的：意志动词辞书形 + ために；名词 + のために。原因：普通形/名词の + ために。",
+      collocation: "合格するために；健康のために；大雨のために；事故のために。",
+      aliases: ["tame ni", "tameni", "为了", "由于"]
+    },
+    "ことにする": {
+      connection: "动词辞书形/ない形 + ことにする；名词 + にする。",
+      collocation: "ことにしている 表示个人习惯或坚持。",
+      aliases: ["决定", "koto ni suru"]
+    },
+    "ことになる": {
+      connection: "动词辞书形/ない形 + ことになる；名词 + になる。",
+      collocation: "ことになっている 表示规定、惯例、预定。",
+      aliases: ["外部决定", "规定", "koto ni naru"]
+    },
+    "なければなりません": {
+      connection: "动词ない形去ない + なければなりません。",
+      collocation: "口语：なきゃならない；书面/正式：なければならない。",
+      aliases: ["必须", "nakereba narimasen", "nakereba naranai"]
+    },
+    "なければならない": {
+      connection: "动词ない形去ない + なければならない。",
+      collocation: "口语：なきゃならない；礼貌：なければなりません。",
+      aliases: ["必须", "nakereba naranai"]
+    },
+    "てたまらない": {
+      connection: "动词て形/い形容词くて/な形容词で + たまらない。",
+      collocation: "第三人称感情：たまらないようだ/らしい/のだ；暑くてたまらない；心配でたまらない。",
+      aliases: ["受不了", "te tamaranai"]
+    },
+    "に限る": {
+      connection: "名词/动词辞书形/ない形 + に限る。",
+      collocation: "疲れた時は寝るに限る；名词 + に限る 表限定，辞书形 + に限る 表“最好”。",
+      aliases: ["最好", "限于", "kagiru"]
+    },
+    "限りは": {
+      connection: "普通形 + 限りは；名词である + 限りは。",
+      collocation: "学生である限りは；できる限り；見る限りでは。",
+      aliases: ["只要", "kagiri wa"]
+    },
+    "ばかり": {
+      connection: "名词/动词连体形/た形/て形 + ばかり；口语：ばっかり。",
+      collocation: "てばかりいる；たばかり；名词ばかり；ばかりで。",
+      aliases: ["光", "刚刚", "bakari"]
+    },
+    "あげます / てあげます": {
+      connection: "名词を + あげます；接受者に + あげます；动词て形 + あげます。",
+      collocation: "てさしあげる；てやる；人に物をあげる。",
+      aliases: ["给别人", "ageru"]
+    },
+    "くれます / てくれます": {
+      connection: "别人 + が/は + 我方に + 物を + くれます；动词て形 + くれます。",
+      collocation: "てくださる；手伝ってくれる；私にくれる。",
+      aliases: ["给我", "kureru"]
+    },
+    "もらいます / てもらいます": {
+      connection: "我方 + が/は + 人に/から + 物を + もらいます；动词て形 + もらいます。",
+      collocation: "ていただく；人に手伝ってもらう；会社から資料をもらう。",
+      aliases: ["请别人", "得到", "morau"]
+    }
+  };
+
+  const report = [];
+  for (const group of GRAMMAR_GROUPS) {
+    for (const item of group.expressions) {
+      const keys = readablePatternKeys(item.pattern);
+      const hitKey = Object.keys(patches).find((key) => keys.some((patternKey) => patternKey.includes(normalizeReadablePattern(key)) || normalizeReadablePattern(key).includes(patternKey)));
+      if (!hitKey) continue;
+      const patch = patches[hitKey];
+      const before = { connection: item.connection || "", collocation: item.collocation || "" };
+      item.connection = mergeTextField(item.connection, patch.connection);
+      item.collocation = mergeTextField(item.collocation, patch.collocation);
+      item.searchAliases = [...new Set([...(item.searchAliases || []), ...(patch.aliases || [])])];
+      if (before.connection !== item.connection || before.collocation !== item.collocation) {
+        report.push({ groupId: group.id, pattern: item.pattern, patchedBy: hitKey });
+      }
+    }
+  }
+  globalThis.CONNECTION_AUDIT_REPORT = report;
+}
+
+function deriveUsageFlags({ pattern = "", meaning = "", nuance = "", tags = [] }) {
+  const text = [pattern, meaning, nuance, ...(tags || [])].join(" ");
+  return {
+    // Pre-label only when the card itself gives an unambiguous usage cue.
+    negative: /消极|负面|不满|遗憾|责备|批评|言い訳|不良过程|坏结果|失误|常负面|多负面/.test(text),
+    positive: /积极|正面|多亏|感谢|祝福|庆幸|好结果/.test(text),
+    spoken: /口语|日常会话|日常用语|聊天|随意说法|较口语/.test(text),
+    written: /书面|正式|文章|论文|公文|通知|新闻|制度性|书写语言|硬朗|文语/.test(text)
+  };
+}
+
+function applyUsageFlagSchema() {
+  for (const group of GRAMMAR_GROUPS) {
+    for (const item of group.expressions) {
+      item.usageFlags ||= deriveUsageFlags(item);
+    }
+  }
 }
 
 function normalizeKanzenLibrary() {

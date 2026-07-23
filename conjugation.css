@@ -4,6 +4,13 @@
    ═══════════════════════════════════════════ */
 
 /* ── 布局 ── */
+.conj-app-shell,
+.conj-app-shell *,
+.conj-app-shell *::before,
+.conj-app-shell *::after {
+  box-sizing: border-box;
+}
+
 .conj-app-shell {
   display: grid;
   grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
@@ -85,6 +92,7 @@
 .conj-cat-btn .cat-label {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .conj-cat-btn .cat-label strong {
@@ -96,6 +104,7 @@
   display: block;
   color: var(--muted);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .conj-cat-btn .cat-count {
@@ -195,6 +204,22 @@
   min-width: 200px;
 }
 
+.conj-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.conj-badges span {
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--soft) 72%, transparent);
+  color: var(--accent);
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 /* ── 规则说明 ── */
 .conj-formation {
   border-left: 3px solid var(--accent);
@@ -222,6 +247,7 @@
 
 .conj-table {
   width: 100%;
+  min-width: 680px;
   border-collapse: collapse;
   font-size: 14px;
 }
@@ -313,6 +339,14 @@
   flex-shrink: 0;
 }
 
+.conj-source-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
 /* ── 空状态 ── */
 .conj-empty {
   color: var(--muted);
@@ -333,14 +367,34 @@
 @media (max-width: 1080px) {
   .conj-app-shell {
     grid-template-columns: 1fr;
+    overflow-x: hidden;
   }
   .conj-sidebar {
     position: static;
     max-height: none;
+    width: 100%;
+    min-width: 0;
   }
 }
 
 @media (max-width: 760px) {
+  .conj-cat-btn {
+    min-width: 0;
+  }
+  .conj-cat-btn .cat-label small {
+    display: none;
+  }
+  .conj-sub-list {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .conj-sub-btn {
+    width: 100%;
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
   .conj-card-top {
     flex-direction: column;
     align-items: flex-start;

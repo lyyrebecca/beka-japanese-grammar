@@ -10,6 +10,7 @@ const state = {
   challengeIndex: 0,
   query: "",
   level: "all",
+  expandedGroups: {},
   theme: loadTheme(),
   progress: loadProgress(),
   custom: loadCustomContent()
@@ -51,6 +52,8 @@ function bindEvents() {
     saveProgress();
   });
   $("addExpressionBtn").addEventListener("click", () => openExpressionEditor("add"));
+  $("exportBackupBtn").addEventListener("click", exportBackup);
+  $("importBackupBtn").addEventListener("click", importBackup);
   $("resetProgressBtn").addEventListener("click", () => {
     if (!confirm("确定清空本机练习记录吗？新增条目、修改和笔记不会被删除。")) return;
     state.progress = { ...EMPTY_PROGRESS, lastGroup: state.groupId };
@@ -87,6 +90,55 @@ function loadCustomContent() {
 
 function saveCustomContent() {
   localStorage.setItem(CUSTOM_CONTENT_KEY, JSON.stringify(state.custom));
+}
+
+function exportBackup() {
+  const backup = {
+    app: "beka-japanese-grammar",
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    progress: state.progress,
+    custom: state.custom,
+    theme: state.theme
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `beka-japanese-grammar-backup-${backup.exportedAt.slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function importBackup() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json,.json";
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      const backup = JSON.parse(await file.text());
+      if (backup.app !== "beka-japanese-grammar" || ![1, 2].includes(backup.version)) {
+        throw new Error("invalid backup");
+      }
+      if (!confirm("导入会覆盖当前浏览器中的学习记录、笔记和自定义条目，确定继续吗？")) return;
+      state.progress = { ...EMPTY_PROGRESS, ...(backup.progress || {}) };
+      state.custom = { ...structuredClone(EMPTY_CUSTOM), ...(backup.custom || {}) };
+      if (backup.theme === "day" || backup.theme === "night") state.theme = backup.theme;
+      saveProgress();
+      saveCustomContent();
+      saveTheme();
+      state.groupId = state.progress.lastGroup || GRAMMAR_GROUPS[0].id;
+      state.challengeIndex = 0;
+      applyTheme();
+      render();
+      alert("备份已恢复。");
+    } catch {
+      alert("这不是可用的学习备份文件。请导入由本网站“备份”按钮导出的 JSON 文件。");
+    }
+  });
+  input.click();
 }
 
 function loadTheme() {
@@ -163,38 +215,92 @@ function renderGroupList() {
     const done = Object.keys(state.progress.completed).filter((key) => key.startsWith(`${group.id}:`)).length;
     const total = filteredChallenges(group).length;
     const active = group.id === state.groupId ? " active" : "";
+    const expanded = isGroupExpanded(group.id);
     const customCount = group.expressions.filter((item) => item._customized).length;
-    return `<button class="group-btn${active}" type="button" data-group="${escapeAttr(group.id)}">
-      <span>
-        <strong>${escapeHtml(group.title)}</strong>
-        <small>${escapeHtml(levelSummary(group))} · ${escapeHtml(group.axis || "功能辨析")}${customCount ? ` · 自定义 ${customCount}` : ""}</small>
-      </span>
-      <em>${done}/${total}</em>
-    </button>`;
+    return `<div class="group-block${expanded ? " expanded" : ""}">
+      <button class="group-btn${active}" type="button" data-group="${escapeAttr(group.id)}" aria-expanded="${expanded}">
+        <span>
+          <strong>${escapeHtml(group.title)}</strong>
+          <small>${escapeHtml(levelSummary(group))} · ${escapeHtml(group.axis || "功能辨析")}${customCount ? ` · 自定义 ${customCount}` : ""}</small>
+        </span>
+        <span class="group-meter">
+          <em>${done}/${total}</em>
+          <i aria-hidden="true">${expanded ? "⌃" : "⌄"}</i>
+        </span>
+      </button>
+      ${expanded ? renderGroupSubItems(group) : ""}
+    </div>`;
   }).join("") : `<p class="empty-state">没有找到匹配的分类。</p>`;
-  list.querySelectorAll("button").forEach((button) => {
+  list.querySelectorAll(".group-btn").forEach((button) => {
     button.addEventListener("click", () => {
-      state.groupId = button.dataset.group;
+      const nextGroupId = button.dataset.group;
+      const alreadyCurrent = state.groupId === nextGroupId;
+      const currentlyExpanded = isGroupExpanded(nextGroupId);
+      state.groupId = nextGroupId;
+      state.expandedGroups[nextGroupId] = alreadyCurrent ? !currentlyExpanded : true;
       state.challengeIndex = 0;
-      state.progress.lastGroup = state.groupId;
+      state.progress.lastGroup = nextGroupId;
       saveProgress();
       renderGroup();
       renderGroupList();
     });
   });
+  list.querySelectorAll(".group-subitem").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.groupId = button.dataset.group;
+      state.expandedGroups[state.groupId] = true;
+      state.challengeIndex = 0;
+      state.progress.lastGroup = state.groupId;
+      saveProgress();
+      renderGroup();
+      renderGroupList();
+      focusExpression(button.dataset.expression);
+      setTimeout(() => focusExpression(button.dataset.expression), 120);
+    });
+  });
   return groups;
+}
+
+function isGroupExpanded(groupId) {
+  return Object.prototype.hasOwnProperty.call(state.expandedGroups, groupId)
+    ? Boolean(state.expandedGroups[groupId])
+    : groupId === state.groupId;
+}
+
+function renderGroupSubItems(group) {
+  const items = group.expressions
+    .filter((item) => state.level === "all" || levelMatches(item.level))
+    .filter((item) => !state.query || expressionMatches(item))
+    .slice(0, 80);
+  if (!items.length) return `<div class="group-subitems"><p class="empty-state">当前筛选下没有小条目。</p></div>`;
+  return `<div class="group-subitems">${items.map((item) => `
+    <button class="group-subitem" type="button" data-group="${escapeAttr(group.id)}" data-expression="${escapeAttr(item.id)}">
+      <span lang="ja">${renderJapaneseText(item.pattern)}</span>
+      <small>${escapeHtml(item.meaning || "未填写意思")}</small>
+    </button>
+  `).join("")}</div>`;
+}
+
+function focusExpression(id) {
+  requestAnimationFrame(() => {
+    const target = document.querySelector(`.expression-card[data-expression="${CSS.escape(id)}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("is-focused");
+    setTimeout(() => target.classList.remove("is-focused"), 1600);
+  });
 }
 
 function groupMatches(group) {
   const expressions = group.expressions;
   const matchesLevel = state.level === "all" || expressions.some((item) => levelMatches(item.level));
-  const matchesQuery = !state.query || queryMatchesText(searchableGroupText(group));
+  const matchesQuery = !state.query || queryMatchesSearchDoc(searchableGroupText(group)) || expressions.some((item) => expressionMatches(item));
   return matchesLevel && matchesQuery;
 }
 
 function expressionMatches(item) {
   const matchesLevel = state.level === "all" || levelMatches(item.level);
-  const matchesQuery = !state.query || queryMatchesText(searchableExpressionText(item));
+  const matchesQuery = !state.query || queryMatchesSearchDoc(searchableExpressionText(item));
   return matchesLevel && matchesQuery;
 }
 
@@ -209,10 +315,8 @@ function searchableGroupText(group) {
     group.theme,
     group.axis,
     group.bookPath,
-    group.focus,
-    ...(group.notes || []),
-    ...group.expressions.map(searchableExpressionText)
-  ].join(" ").toLowerCase();
+    group.focus
+  ].join(" ");
 }
 
 function searchableExpressionText(item) {
@@ -222,24 +326,45 @@ function searchableExpressionText(item) {
     item.pattern,
     item.meaning,
     item.connection,
+    item.collocation,
     item.nuance,
-    item.example,
-    item.translation,
     item.source,
     item.sourceBook,
     item.sourceLesson,
-    item.userNote,
+    ...(item.searchAliases || []),
+    ...usageFlagLabels(item.usageFlags),
     ...(item.tags || [])
-  ].join(" ").toLowerCase();
+  ].join(" ");
 }
 
-function queryMatchesText(text) {
-  const haystack = String(text || "").toLowerCase();
-  const compactHaystack = compactSearchText(haystack);
-  const compactQuery = compactSearchText(state.query);
-  if (!compactQuery) return true;
-  if (compactHaystack.includes(compactQuery)) return true;
-  return searchTokens(state.query).some((token) => compactHaystack.includes(compactSearchText(token)));
+function queryMatchesSearchDoc(text) {
+  const haystack = buildSearchDoc(text);
+  return expandedSearchTokens(state.query).some((token) => {
+    const compact = compactSearchText(token);
+    return compact && haystack.includes(compact);
+  });
+}
+
+function buildSearchDoc(text) {
+  const source = String(text || "");
+  const kana = normalizeKana(source);
+  return [
+    source,
+    kana,
+    kanaToRomaji(kana),
+    ...expandChineseSynonyms(source)
+  ].map(compactSearchText).join(" ");
+}
+
+function expandedSearchTokens(query) {
+  const isRomajiPhrase = /^[a-zA-Z\s-]+$/.test(String(query || "")) && String(query || "").trim().includes(" ");
+  const rawTokens = [query, ...(isRomajiPhrase ? [] : searchTokens(query)), ...expandChineseSynonyms(query)];
+  const variants = [];
+  rawTokens.forEach((token) => {
+    const kana = normalizeKana(token);
+    variants.push(token, kana, kanaToRomaji(kana));
+  });
+  return [...new Set(variants.filter(Boolean))];
 }
 
 function searchTokens(query) {
@@ -253,7 +378,87 @@ function searchTokens(query) {
 function compactSearchText(text) {
   return String(text || "")
     .toLowerCase()
-    .replace(/[\s　、，。．,.。:：;；/／|｜「」『』（）()【】\[\]{}<>《》・~〜…]+/g, "");
+    .normalize("NFKC")
+    .replace(/[\s　、，。．,.。:：;；/／|｜「」『』（）()【】\[\]{}<>《》・~〜…-]+/g, "");
+}
+
+const CHINESE_SEARCH_SYNONYMS = [
+  ["如果", "假如", "倘若", "要是", "若是", "条件", "仮定"],
+  ["原因", "理由", "因为", "由于", "所以", "因果", "契機", "根拠", "から", "ので", "ため", "せい", "おかげ"],
+  ["目的", "为了", "以便", "目标", "ように", "ために", "べく"],
+  ["让步", "逆接", "转折", "虽然", "即使", "但是", "尽管", "のに", "ても", "けれど", "にもかかわらず"],
+  ["推测", "推量", "也许", "可能", "应该", "大概", "好像", "でしょう", "かもしれない", "はず", "そう", "よう", "らしい"],
+  ["传闻", "听说", "据说", "转述", "そうだ", "とのこと", "らしい"],
+  ["必须", "义务", "必要", "不得不", "なければならない", "なくてはいけない", "べき", "ざるを得ない"],
+  ["禁止", "不要", "不可以", "てはいけない", "ないでください", "べきではない"],
+  ["固定搭配", "惯用", "搭配", "連語", "慣用"]
+];
+
+function expandChineseSynonyms(text) {
+  const compact = compactSearchText(text);
+  if (!compact) return [];
+  return CHINESE_SEARCH_SYNONYMS
+    .filter((group) => group.some((word) => compact.includes(compactSearchText(word))))
+    .flat();
+}
+
+function normalizeKana(text) {
+  return String(text || "")
+    .normalize("NFKC")
+    .replace(/[ァ-ヶ]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60));
+}
+
+const ROMAJI_DIGRAPHS = {
+  きゃ: "kya", きゅ: "kyu", きょ: "kyo", しゃ: "sha", しゅ: "shu", しょ: "sho",
+  ちゃ: "cha", ちゅ: "chu", ちょ: "cho", にゃ: "nya", にゅ: "nyu", にょ: "nyo",
+  ひゃ: "hya", ひゅ: "hyu", ひょ: "hyo", みゃ: "mya", みゅ: "myu", みょ: "myo",
+  りゃ: "rya", りゅ: "ryu", りょ: "ryo", ぎゃ: "gya", ぎゅ: "gyu", ぎょ: "gyo",
+  じゃ: "ja", じゅ: "ju", じょ: "jo", びゃ: "bya", びゅ: "byu", びょ: "byo",
+  ぴゃ: "pya", ぴゅ: "pyu", ぴょ: "pyo"
+};
+
+const ROMAJI_MONOGRAPHS = {
+  あ: "a", い: "i", う: "u", え: "e", お: "o",
+  か: "ka", き: "ki", く: "ku", け: "ke", こ: "ko",
+  さ: "sa", し: "shi", す: "su", せ: "se", そ: "so",
+  た: "ta", ち: "chi", つ: "tsu", て: "te", と: "to",
+  な: "na", に: "ni", ぬ: "nu", ね: "ne", の: "no",
+  は: "ha", ひ: "hi", ふ: "fu", へ: "he", ほ: "ho",
+  ま: "ma", み: "mi", む: "mu", め: "me", も: "mo",
+  や: "ya", ゆ: "yu", よ: "yo",
+  ら: "ra", り: "ri", る: "ru", れ: "re", ろ: "ro",
+  わ: "wa", を: "o", ん: "n",
+  が: "ga", ぎ: "gi", ぐ: "gu", げ: "ge", ご: "go",
+  ざ: "za", じ: "ji", ず: "zu", ぜ: "ze", ぞ: "zo",
+  だ: "da", ぢ: "ji", づ: "zu", で: "de", ど: "do",
+  ば: "ba", び: "bi", ぶ: "bu", べ: "be", ぼ: "bo",
+  ぱ: "pa", ぴ: "pi", ぷ: "pu", ぺ: "pe", ぽ: "po",
+  ぁ: "a", ぃ: "i", ぅ: "u", ぇ: "e", ぉ: "o", ゃ: "ya", ゅ: "yu", ょ: "yo", っ: ""
+};
+
+function kanaToRomaji(text) {
+  const kana = normalizeKana(text);
+  let out = "";
+  for (let index = 0; index < kana.length; index += 1) {
+    const char = kana[index];
+    if (char === "っ") {
+      const next = ROMAJI_DIGRAPHS[kana.slice(index + 1, index + 3)] || ROMAJI_MONOGRAPHS[kana[index + 1]] || "";
+      out += next.charAt(0);
+      continue;
+    }
+    const pair = kana.slice(index, index + 2);
+    if (ROMAJI_DIGRAPHS[pair]) {
+      out += ROMAJI_DIGRAPHS[pair];
+      index += 1;
+      continue;
+    }
+    if (char === "ー") {
+      out += out.match(/[aeiou]$/)?.[0] || "";
+      continue;
+    }
+    out += ROMAJI_MONOGRAPHS[char] || char;
+  }
+  return out;
 }
 
 function renderGroup() {
@@ -287,6 +492,7 @@ function renderGroup() {
 function renderExpressions(group, expressions) {
   $("expressionLadder").innerHTML = expressions.length ? expressions.map((item) => {
     const profile = usageProfile(item);
+    const usageBadges = renderUsageBadges(item.usageFlags);
     const note = item.userNote ? `<div class="user-note"><strong>我的笔记</strong><p>${escapeHtml(item.userNote)}</p></div>` : "";
     const deleteButton = item._userAdded ? `<button class="icon-btn danger" type="button" data-action="delete" data-id="${escapeAttr(item.id)}" title="删除自定义条目" aria-label="删除自定义条目">×</button>` : "";
     const restoreButton = item._customized && !item._userAdded ? `<button class="icon-btn" type="button" data-action="restore" data-id="${escapeAttr(item.id)}" title="恢复内置内容" aria-label="恢复内置内容">↺</button>` : "";
@@ -302,11 +508,13 @@ function renderExpressions(group, expressions) {
         <span class="level">${escapeHtml(item.level)}</span>
         ${item.source ? `<span class="source-tag">${escapeHtml(item.source)}</span>` : ""}
         ${item._userAdded ? `<span class="source-tag">我添加的</span>` : ""}
+        ${usageBadges}
         <strong lang="ja">${renderJapaneseText(item.pattern)}</strong>
       </div>
       <p>${escapeHtml(item.meaning)}</p>
       <dl>
         <dt>接续</dt><dd lang="ja">${renderJapaneseText(item.connection)}</dd>
+        <dt>搭配</dt><dd lang="ja">${renderJapaneseText(item.collocation || "—")}</dd>
         <dt>语感</dt><dd>${escapeHtml(item.nuance)}</dd>
         <dt>正式</dt><dd>${escapeHtml(profile.formality)}</dd>
         <dt>表记</dt><dd lang="ja">${renderJapaneseText(profile.notation)}</dd>
@@ -324,6 +532,23 @@ function renderExpressions(group, expressions) {
   $("expressionLadder").querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleCardAction(group, button.dataset.action, button.dataset.id));
   });
+}
+
+const USAGE_BADGES = {
+  negative: { character: "消", label: "消极 / 负面倾向" },
+  positive: { character: "积", label: "积极 / 正面倾向" },
+  spoken: { character: "口", label: "口语 / 日常会话" },
+  written: { character: "书", label: "书面 / 正式表达" }
+};
+
+function renderUsageBadges(flags = {}) {
+  return `<span class="usage-badges">${Object.entries(USAGE_BADGES).filter(([key]) => flags[key]).map(([key, badge]) => `
+    <span class="usage-badge usage-badge--${key}" title="${badge.label}" aria-label="${badge.label}">${badge.character}</span>
+  `).join("")}</span>`;
+}
+
+function usageFlagLabels(flags = {}) {
+  return Object.entries(USAGE_BADGES).filter(([key]) => flags[key]).map(([, badge]) => badge.label);
 }
 
 function handleCardAction(group, action, id) {
@@ -456,12 +681,14 @@ function openExpressionEditor(mode, item = null) {
     pattern: "",
     meaning: "",
     connection: "",
+    collocation: "",
     nuance: "",
     example: "",
     translation: "",
     sourceBook: "我添加的语法",
     sourceLesson: group.title,
     tags: [group.theme].filter(Boolean),
+    usageFlags: {},
     userNote: ""
   };
   openDialog(`
@@ -476,6 +703,7 @@ function openExpressionEditor(mode, item = null) {
         ${inputField("meaning", "意思", data.meaning)}
         ${inputField("connection", "接续", data.connection)}
       </div>
+      ${textareaField("collocation", "固定搭配", data.collocation || "")}
       ${textareaField("nuance", "语感 / 使用限制", data.nuance)}
       ${textareaField("example", "例句", data.example)}
       ${textareaField("translation", "译文", data.translation)}
@@ -484,6 +712,7 @@ function openExpressionEditor(mode, item = null) {
         ${inputField("sourceLesson", "来源课次", data.sourceLesson)}
       </div>
       ${inputField("tags", "标签（用逗号分隔）", (data.tags || []).join("，"))}
+      ${usageFlagFields(data.usageFlags)}
       ${textareaField("userNote", "我的笔记", data.userNote || "")}
       <footer>
         <button class="secondary-btn" type="button" data-close-dialog>取消</button>
@@ -556,14 +785,27 @@ function expressionPayloadFromForm(form) {
     pattern: String(form.get("pattern") || "").trim(),
     meaning: String(form.get("meaning") || "").trim(),
     connection: String(form.get("connection") || "").trim(),
+    collocation: String(form.get("collocation") || "").trim(),
     nuance: String(form.get("nuance") || "").trim(),
     example: String(form.get("example") || "").trim(),
     translation: String(form.get("translation") || "").trim(),
     sourceBook: String(form.get("sourceBook") || "").trim(),
     sourceLesson: String(form.get("sourceLesson") || "").trim(),
     tags,
+    usageFlags: Object.fromEntries(Object.keys(USAGE_BADGES).map((key) => [key, form.get(`usage-${key}`) === "on"])),
     userNote: String(form.get("userNote") || "").trim()
   };
+}
+
+function usageFlagFields(flags = {}) {
+  return `<fieldset class="usage-flag-fields">
+    <legend>语气 / 文体徽章（勾选后显示在卡片顶部）</legend>
+    ${Object.entries(USAGE_BADGES).map(([key, badge]) => `<label class="usage-flag-option usage-flag-option--${key}">
+      <input type="checkbox" name="usage-${key}"${flags[key] ? " checked" : ""}>
+      <span class="usage-badge usage-badge--${key}" aria-hidden="true">${badge.character}</span>
+      <span>${badge.label}</span>
+    </label>`).join("")}
+  </fieldset>`;
 }
 
 function restoreBuiltInExpression(id) {

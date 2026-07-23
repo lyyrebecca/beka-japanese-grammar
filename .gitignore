@@ -1,2 +1,8 @@
 .DS_Store
 *.tgz
+dist/
+.openai/
+outputs/
+.postplus/
+naiwa-v2-upgrade-*/
+beka-japanese-grammar-backup-*.json
