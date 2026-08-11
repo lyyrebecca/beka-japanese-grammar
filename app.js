@@ -8,7 +8,8 @@ const EMPTY_CUSTOM = { edits: {}, notes: {}, additions: {}, deleted: {} };
 const state = {
   groupId: "",
   challengeIndex: 0,
-  query: "",
+  query: loadInitialSearchQuery(),
+  searchResultKey: "",
   level: "all",
   expandedGroups: {},
   theme: loadTheme(),
@@ -21,9 +22,14 @@ const $ = (id) => document.getElementById(id);
 function init() {
   ensureEditorShell();
   state.groupId = state.progress.lastGroup || GRAMMAR_GROUPS[0].id;
+  $("searchInput").value = state.query;
   applyTheme();
   bindEvents();
   render();
+}
+
+function loadInitialSearchQuery() {
+  return (new URLSearchParams(window.location.search).get("q") || "").trim().toLowerCase();
 }
 
 function bindEvents() {
@@ -34,6 +40,7 @@ function bindEvents() {
   });
   $("searchInput").addEventListener("input", (event) => {
     state.query = event.target.value.trim().toLowerCase();
+    state.searchResultKey = "";
     render();
   });
   $("levelFilter").addEventListener("change", (event) => {
@@ -197,6 +204,14 @@ function currentChallenge() {
 }
 
 function render() {
+  if (state.query) {
+    const results = GrammarSearch.rank(mergedGroups(), state.query, { level: state.level });
+    setSearchMode(true);
+    renderSearchResults(results);
+    renderSearchGroupList(results);
+    return;
+  }
+  setSearchMode(false);
   const visibleGroups = renderGroupList();
   if (!visibleGroups.some((group) => group.id === state.groupId) && visibleGroups.length) {
     state.groupId = visibleGroups[0].id;
@@ -206,6 +221,11 @@ function render() {
   }
   renderGroup();
   renderGroupList();
+}
+
+function setSearchMode(active) {
+  $("searchResultsPanel").classList.toggle("hidden", !active);
+  $("learningWorkspace").classList.toggle("hidden", active);
 }
 
 function renderGroupList() {
@@ -261,6 +281,151 @@ function renderGroupList() {
   return groups;
 }
 
+function renderSearchGroupList(results) {
+  const list = $("groupList");
+  const tiers = [
+    ["exact", "完全一致"],
+    ["strong", "强相关"],
+    ["semantic", "相近意思"],
+    ["structural", "相近构造"]
+  ];
+  const hasDirect = results.counts.exact + results.counts.strong > 0;
+  list.innerHTML = `
+    <section class="search-nav" aria-label="检索结果导航">
+      <div class="search-nav-head">
+        <span>检索结果</span>
+        <button class="text-btn" type="button" data-search-action="clear">清空</button>
+      </div>
+      <p>“${escapeHtml(results.query)}”</p>
+      ${tiers.map(([tier, title]) => {
+        const open = (tier === "exact" || tier === "strong") || !hasDirect;
+        const items = results[tier];
+        return `<details class="search-nav-tier" ${open ? "open" : ""}>
+          <summary>${escapeHtml(title)} <em>${formatSearchCount(results.counts[tier])}</em></summary>
+          ${items.length ? `<div>${items.map((result) => `<button type="button" data-search-action="focus" data-result-key="${escapeAttr(result.key)}"><span lang="ja">${renderJapaneseText(result.item.pattern)}</span><small>${escapeHtml(result.item.meaning)}</small></button>`).join("")}</div>` : ""}
+        </details>`;
+      }).join("")}
+    </section>`;
+  bindSearchResultActions(list);
+}
+
+function renderSearchResults(results) {
+  const panel = $("searchResultsPanel");
+  const directCount = results.counts.exact + results.counts.strong;
+  const totalRelated = results.counts.semantic + results.counts.structural;
+  panel.innerHTML = `
+    <section class="panel search-results-shell" aria-label="分层检索结果">
+      <div class="section-head search-results-head">
+        <div>
+          <p class="eyebrow">精准检索</p>
+          <h2>“${escapeHtml(results.query)}”</h2>
+          <p class="summary">${results.counts.exact ? `找到完全一致的词条 ${results.counts.exact} 条。` : `词库中暂未找到完全一致的「${escapeHtml(results.query)}」。`}</p>
+        </div>
+        <button class="ghost-btn compact-action" type="button" data-search-action="clear"><span aria-hidden="true">×</span>清空检索</button>
+      </div>
+      <div class="search-counts" aria-label="各类结果数量">
+        <span class="search-count search-count--exact">完全一致 ${formatSearchCount(results.counts.exact)}</span>
+        <span class="search-count search-count--strong">强相关 ${formatSearchCount(results.counts.strong)}</span>
+        <span>相近意思 ${formatSearchCount(results.counts.semantic)}</span>
+        <span>相近构造 ${formatSearchCount(results.counts.structural)}</span>
+      </div>
+      ${results.best ? `<p class="best-match">最佳匹配：<strong lang="ja">${renderJapaneseText(results.best.item.pattern)}</strong><span>${escapeHtml(results.best.reasons[0])}</span></p>` : `<p class="search-no-related">没有找到足够相关的词条；可以换用中文意思、假名、汉字或罗马音再次检索。</p>`}
+      ${renderSearchTier("exact", "完全一致", "句式或检索别名与输入相同。", results, true)}
+      ${renderSearchTier("strong", "强相关", "句式、罗马音、意思或接续直接命中。", results, true)}
+      ${renderSearchTier("semantic", "相近意思", "可用来比较相同功能下的语感差异。", results, !directCount)}
+      ${renderSearchTier("structural", "相近构造", "共享关键构造，但意思未必可以直接互换。", results, !directCount)}
+      ${totalRelated > 24 ? `<p class="search-limit-note">每类优先展示前 ${GrammarSearch.MAX_RESULTS_PER_TIER} 条；请用更具体的关键词继续缩小范围。</p>` : ""}
+    </section>`;
+  bindSearchResultActions(panel);
+}
+
+function renderSearchTier(tier, title, description, results, open) {
+  const items = results[tier];
+  const total = results.counts[tier];
+  if (!total && tier !== "exact") return "";
+  if (!total) return `<section class="search-tier search-tier--empty"><h3>${escapeHtml(title)} <span>0</span></h3><p>没有。</p></section>`;
+  return `
+    <details class="search-tier search-tier--${tier}" ${open ? "open" : ""}>
+      <summary>
+        <span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></span>
+        <em>${formatSearchCount(total)}</em>
+      </summary>
+      <div class="search-result-list">
+        ${items.map((result, index) => renderSearchResultCard(result, index === 0 && (tier === "exact" || tier === "strong"))).join("")}
+        ${total > items.length ? `<p class="search-limit-note">结果较多，已优先显示最相关的 ${items.length} 条。</p>` : ""}
+      </div>
+    </details>`;
+}
+
+function formatSearchCount(count) {
+  return count > GrammarSearch.MAX_RESULTS_PER_TIER ? `${GrammarSearch.MAX_RESULTS_PER_TIER}+` : String(count);
+}
+
+function renderSearchResultCard(result, open) {
+  const item = result.item;
+  const profile = usageProfile(item);
+  return `
+    <details class="search-result-card" data-search-result="${escapeAttr(result.key)}" ${open ? "open" : ""}>
+      <summary>
+        <span class="search-result-main">
+          <span class="search-result-meta"><span class="level">${escapeHtml(item.level)}</span>${renderUsageBadges(item.usageFlags)}<small>${escapeHtml(result.groupTitle)}</small></span>
+          <strong lang="ja">${renderJapaneseText(item.pattern)}</strong>
+          <span>${escapeHtml(item.meaning)}</span>
+        </span>
+        <span class="match-reasons">${result.reasons.map((reason) => `<i>${escapeHtml(reason)}</i>`).join("")}</span>
+      </summary>
+      <div class="search-result-detail">
+        <dl>
+          <dt>接续</dt><dd lang="ja">${renderJapaneseText(item.connection || "—")}</dd>
+          <dt>搭配</dt><dd lang="ja">${renderJapaneseText(item.collocation || "—")}</dd>
+          <dt>语感</dt><dd>${escapeHtml(item.nuance || "—")}</dd>
+          <dt>正式</dt><dd>${escapeHtml(profile.formality)}</dd>
+          <dt>表记</dt><dd lang="ja">${renderJapaneseText(profile.notation)}</dd>
+          <dt>来源</dt><dd>${escapeHtml([item.sourceBook, item.sourceLesson].filter(Boolean).join(" · ") || "—")}</dd>
+        </dl>
+        ${item.example ? `<div class="example"><p lang="ja">${renderExample(item)}</p><small>${escapeHtml(item.translation || "")}</small></div>` : ""}
+        <div class="button-row"><button class="secondary-btn compact-action" type="button" data-search-action="enter" data-group-id="${escapeAttr(result.groupId)}" data-expression-id="${escapeAttr(item.id)}">进入所属分类</button></div>
+      </div>
+    </details>`;
+}
+
+function bindSearchResultActions(root) {
+  root.querySelectorAll("[data-search-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.searchAction;
+      if (action === "clear") clearSearch();
+      if (action === "focus") focusSearchResult(button.dataset.resultKey);
+      if (action === "enter") enterSearchResult(button.dataset.groupId, button.dataset.expressionId);
+    });
+  });
+}
+
+function clearSearch() {
+  state.query = "";
+  state.searchResultKey = "";
+  $("searchInput").value = "";
+  render();
+}
+
+function focusSearchResult(key) {
+  const card = document.querySelector(`[data-search-result="${CSS.escape(key)}"]`);
+  if (!card) return;
+  card.open = true;
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.classList.add("is-focused");
+  setTimeout(() => card.classList.remove("is-focused"), 1600);
+}
+
+function enterSearchResult(groupId, expressionId) {
+  state.groupId = groupId;
+  state.expandedGroups[groupId] = true;
+  state.challengeIndex = 0;
+  state.progress.lastGroup = groupId;
+  saveProgress();
+  clearSearch();
+  setTimeout(() => focusExpression(expressionId), 100);
+}
+
 function isGroupExpanded(groupId) {
   return Object.prototype.hasOwnProperty.call(state.expandedGroups, groupId)
     ? Boolean(state.expandedGroups[groupId])
@@ -293,15 +458,11 @@ function focusExpression(id) {
 
 function groupMatches(group) {
   const expressions = group.expressions;
-  const matchesLevel = state.level === "all" || expressions.some((item) => levelMatches(item.level));
-  const matchesQuery = !state.query || queryMatchesSearchDoc(searchableGroupText(group)) || expressions.some((item) => expressionMatches(item));
-  return matchesLevel && matchesQuery;
+  return state.level === "all" || expressions.some((item) => levelMatches(item.level));
 }
 
 function expressionMatches(item) {
-  const matchesLevel = state.level === "all" || levelMatches(item.level);
-  const matchesQuery = !state.query || queryMatchesSearchDoc(searchableExpressionText(item));
-  return matchesLevel && matchesQuery;
+  return state.level === "all" || levelMatches(item.level);
 }
 
 function levelMatches(level = "") {
@@ -1002,6 +1163,9 @@ const USAGE_PROFILE = {
 };
 
 const FURIGANA_MAP = {
+  // Generated coverage for every Japanese pattern, collocation, and example
+  // in the built-in library.  Hand-curated entries below take precedence.
+  ...(globalThis.AUTO_FURIGANA_MAP || {}),
   "使役受身形": "しえきうけみけい",
   "使役形": "しえきけい",
   "受身形": "うけみけい",

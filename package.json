@@ -1,6 +1,8 @@
 {
   "scripts": {
-    "build": "node scripts/build-site.mjs"
+    "build": "node scripts/build-site.mjs",
+    "audit:conjugation": "node scripts/audit-conjugation-data.mjs",
+    "audit:search": "node scripts/audit-search-ranking.mjs"
   },
   "devDependencies": {}
 }

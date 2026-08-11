@@ -61,28 +61,30 @@
       </aside>
 
       <section class="workspace" aria-live="polite">
-        <section class="release-panel" aria-label="第三版更新说明">
+        <section id="searchResultsPanel" class="search-results-panel hidden" aria-live="polite"></section>
+        <div id="learningWorkspace">
+        <section class="release-panel" aria-label="第四版更新说明">
           <div>
-            <p class="eyebrow">V3 update</p>
-            <h2>第三版：语法库扩充 + 速查体系升级</h2>
-            <p class="summary">这次把两本高考日语语法资料整理进站内，并重点补强“变形规则速查”：数词、助数词读法、自动词/他动词、敬语、授受、名词化都可以直接查。</p>
+            <p class="eyebrow">V4 update · 第四次更新</p>
+            <h2>第四版：先找到这条，再比较相近表达</h2>
+            <p class="summary">这次重点把搜索改成分层精准检索：先确认“有没有这条”，再把相近意思和相近构造放在下方，查「からこそ」不必再翻一大串无关结果。</p>
           </div>
           <div class="release-grid">
             <article>
-              <strong>书籍内容补充</strong>
-              <span>新增/合并高考语法点，补接续、固定搭配、例句和注意点。</span>
+              <strong>完全一致优先</strong>
+              <span>句式、别名或罗马音一致时，第一时间告诉你词库是否收录。</span>
             </article>
             <article>
-              <strong>搜索更顺手</strong>
-              <span>中文、日语、罗马音都能查；例句不再污染语法点搜索。</span>
+              <strong>强相关分开看</strong>
+              <span>直接匹配的意思、接续或搭配单独排列，不再混入泛相关条目。</span>
             </article>
             <article>
-              <strong>速查页升级</strong>
-              <span>输入“本”“いっぽん”“開ける”“てくれる”“の こと”都能定位。</span>
+              <strong>相近表达在下方</strong>
+              <span>相近意思与相近构造默认折叠；需要辨析时再展开比较。</span>
             </article>
             <article>
-              <strong>导航更细</strong>
-              <span>左侧大类可展开小条目，点小条目会跳到对应卡片。</span>
+              <strong>自定义内容也能查</strong>
+              <span>自己新增、编辑和添加的别名，同样进入检索排序和等级筛选。</span>
             </article>
           </div>
         </section>
@@ -171,10 +173,13 @@
             <div id="rewriteList" class="rewrite-list"></div>
           </article>
         </section>
+        </div>
       </section>
     </main>
 
     <script src="content-data.js"></script>
+    <script src="furigana-data.js"></script>
+    <script src="search-engine.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
