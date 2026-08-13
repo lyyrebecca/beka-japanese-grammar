@@ -1,6 +1,7 @@
 const STORAGE_KEY = "jp-grammar-quest-progress-v1";
 const THEME_KEY = "jp-grammar-quest-theme-v1";
 const CUSTOM_CONTENT_KEY = "jp-grammar-custom-content-v1";
+const LAYOUT_KEY = "jp-grammar-panel-layout-v1";
 
 const EMPTY_PROGRESS = { completed: {}, hard: {}, answers: {}, lastGroup: "" };
 const EMPTY_CUSTOM = { edits: {}, notes: {}, additions: {}, deleted: {}, preferences: {}, comparison: { sections: {}, profiles: {}, memberships: {} }, schemaVersion: 3 };
@@ -26,6 +27,7 @@ function init() {
   $("searchInput").value = state.query;
   applyTheme();
   bindEvents();
+  bindPanelResizers();
   render();
 }
 
@@ -75,6 +77,120 @@ function bindEvents() {
     state.custom = structuredClone(EMPTY_CUSTOM);
     saveCustomContent();
     render();
+  });
+}
+
+function loadPanelLayout() {
+  try {
+    const layout = JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {};
+    return {
+      sidebar: Number.isFinite(layout.sidebar) ? layout.sidebar : null,
+      knowledge: Number.isFinite(layout.knowledge) ? layout.knowledge : null
+    };
+  } catch {
+    return { sidebar: null, knowledge: null };
+  }
+}
+
+function savePanelLayout(layout) {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+}
+
+function bindPanelResizers() {
+  const appShell = document.querySelector(".app-shell");
+  const studyGrid = document.querySelector(".study-grid");
+  const rootStyle = document.documentElement.style;
+  const saved = loadPanelLayout();
+  if (saved.sidebar) rootStyle.setProperty("--sidebar-width", `${saved.sidebar}px`);
+  if (saved.knowledge) rootStyle.setProperty("--knowledge-width", `${saved.knowledge}px`);
+
+  const rules = {
+    sidebar: {
+      container: appShell,
+      variable: "--sidebar-width",
+      min: 220,
+      panel: $("sidebarPanel"),
+      getMax: () => Math.max(220, appShell.clientWidth - 472),
+    },
+    knowledge: {
+      container: studyGrid,
+      variable: "--knowledge-width",
+      min: 320,
+      panel: document.querySelector(".knowledge-column"),
+      getMax: () => Math.max(320, studyGrid.clientWidth - 292),
+    }
+  };
+
+  const setSize = (kind, requested, persist = false) => {
+    const rule = rules[kind];
+    const value = Math.round(Math.min(rule.getMax(), Math.max(rule.min, requested)));
+    rootStyle.setProperty(rule.variable, `${value}px`);
+    const resizer = document.querySelector(`[data-resizer="${kind}"]`);
+    resizer?.setAttribute("aria-valuenow", String(value));
+    resizer?.setAttribute("aria-valuemin", String(rule.min));
+    resizer?.setAttribute("aria-valuemax", String(Math.round(rule.getMax())));
+    if (persist) {
+      const layout = loadPanelLayout();
+      layout[kind] = value;
+      savePanelLayout(layout);
+    }
+  };
+
+  document.querySelectorAll("[data-resizer]").forEach((resizer) => {
+    const kind = resizer.dataset.resizer;
+    const rule = rules[kind];
+    if (!rule) return;
+    const applied = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(rule.variable));
+    const initial = Number.isFinite(applied) ? applied : rule.panel.getBoundingClientRect().width;
+    setSize(kind, initial);
+
+    let drag = null;
+
+    const finishDrag = () => {
+      if (!drag) return;
+      document.body.classList.remove("is-resizing");
+      setSize(kind, parseFloat(getComputedStyle(document.documentElement).getPropertyValue(rule.variable)), true);
+      drag = null;
+    };
+
+    resizer.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || window.matchMedia("(max-width: 1080px)").matches) return;
+      event.preventDefault();
+      try { resizer.setPointerCapture(event.pointerId); } catch {}
+      document.body.classList.add("is-resizing");
+      drag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startSize: parseFloat(getComputedStyle(document.documentElement).getPropertyValue(rule.variable))
+      };
+    });
+
+    window.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      setSize(kind, drag.startSize + event.clientX - drag.startX);
+    });
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+
+    resizer.addEventListener("keydown", (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(rule.variable));
+      const step = event.shiftKey ? 60 : 24;
+      const next = event.key === 'ArrowLeft' ? current - step
+        : event.key === 'ArrowRight' ? current + step
+          : event.key === 'Home' ? rule.min : rule.getMax();
+      setSize(kind, next, true);
+    });
+
+    resizer.addEventListener("dblclick", () => {
+      rootStyle.removeProperty(rule.variable);
+      const layout = loadPanelLayout();
+      layout[kind] = null;
+      savePanelLayout(layout);
+      const defaultValue = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(rule.variable));
+      setSize(kind, defaultValue || rule.min);
+    });
   });
 }
 
@@ -312,7 +428,7 @@ function render() {
 
 function setSearchMode(active) {
   $("searchResultsPanel").classList.toggle("hidden", !active);
-  $("learningWorkspace").classList.toggle("hidden", active);
+  $("knowledgeCardsPanel").classList.toggle("hidden", active);
 }
 
 function renderGroupList() {

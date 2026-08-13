@@ -41,7 +41,7 @@
     </header>
 
     <main class="app-shell">
-      <aside class="sidebar" aria-label="意思组导航">
+      <aside id="sidebarPanel" class="sidebar" aria-label="意思组导航">
         <div class="panel compact">
           <label for="searchInput">搜索意思 / 语法</label>
           <input id="searchInput" type="search" placeholder="例如：原因、ように、わけだ">
@@ -60,8 +60,9 @@
         <nav id="groupList" class="group-list"></nav>
       </aside>
 
+      <div id="sidebarResizer" class="panel-resizer panel-resizer--sidebar" data-resizer="sidebar" role="separator" aria-orientation="vertical" aria-label="拖动调整左侧检索导航与学习区域的宽度" aria-controls="sidebarPanel learningWorkspace" tabindex="0"></div>
+
       <section class="workspace" aria-live="polite">
-        <section id="searchResultsPanel" class="search-results-panel hidden" aria-live="polite"></section>
         <div id="learningWorkspace">
         <section class="release-panel" aria-label="第六次更新说明">
           <div>
@@ -79,7 +80,7 @@
               <span>完全一致、强相关、相近意思、相近构造分层呈现；变体、罗马音和中文功能词均可检索。</span>
             </article>
             <article>
-              <strong>闯关下方直接辨析</strong>
+              <strong>闯关前直接辨析</strong>
               <span>43 组 / 507 卡按细分意思分标签，表格对照接续、场景、正负倾向与文体限制。</span>
             </article>
             <article>
@@ -109,8 +110,12 @@
           <div id="routeCards" class="route-cards"></div>
         </section>
 
+        </div>
+
         <section class="study-grid">
-          <article class="panel ladder-panel">
+          <div class="knowledge-column">
+            <section id="searchResultsPanel" class="search-results-panel hidden" aria-live="polite"></section>
+            <article id="knowledgeCardsPanel" class="panel ladder-panel">
             <div class="section-head">
               <div>
                 <p class="eyebrow">表达梯度</p>
@@ -123,9 +128,28 @@
               <span id="progressPill" class="pill">0 / 0</span>
             </div>
             <div id="expressionLadder" class="ladder"></div>
-          </article>
+            </article>
+          </div>
 
-          <div class="practice-column">
+          <div id="knowledgeResizer" class="panel-resizer panel-resizer--knowledge" data-resizer="knowledge" role="separator" aria-orientation="vertical" aria-label="拖动调整知识卡片与辨析练习区域的宽度" aria-controls="knowledgeCardsPanel practicePanel" tabindex="0"></div>
+
+          <div id="practicePanel" class="practice-column">
+            <article class="panel comparison-panel" aria-labelledby="comparisonTitle">
+              <div class="section-head comparison-heading">
+                <div>
+                  <p class="eyebrow">相近表达辨析</p>
+                  <h3 id="comparisonTitle">按细分意思，选对场景</h3>
+                  <p id="comparisonLead" class="comparison-lead"></p>
+                </div>
+                <div class="comparison-actions">
+                  <button id="addComparisonExpressionBtn" class="secondary-btn compact-action" type="button" title="在当前辨析小类添加表达">＋ 添加表达</button>
+                  <button id="editComparisonSectionBtn" class="ghost-btn compact-action" type="button" title="新建或修改自定义辨析小类">✎ 新建小类</button>
+                </div>
+              </div>
+              <div id="comparisonTabs" class="comparison-tabs" role="tablist" aria-label="细分辨析分类"></div>
+              <div id="comparisonMatrix" class="comparison-matrix"></div>
+            </article>
+
             <article class="panel challenge-panel">
               <div class="section-head">
                 <div>
@@ -151,25 +175,8 @@
 
               <div id="feedbackBox" class="feedback hidden"></div>
             </article>
-
-            <article class="panel comparison-panel" aria-labelledby="comparisonTitle">
-              <div class="section-head comparison-heading">
-                <div>
-                  <p class="eyebrow">相近表达辨析</p>
-                  <h3 id="comparisonTitle">按细分意思，选对场景</h3>
-                  <p id="comparisonLead" class="comparison-lead"></p>
-                </div>
-                <div class="comparison-actions">
-                  <button id="addComparisonExpressionBtn" class="secondary-btn compact-action" type="button" title="在当前辨析小类添加表达">＋ 添加表达</button>
-                  <button id="editComparisonSectionBtn" class="ghost-btn compact-action" type="button" title="新建或修改自定义辨析小类">✎ 新建小类</button>
-                </div>
-              </div>
-              <div id="comparisonTabs" class="comparison-tabs" role="tablist" aria-label="细分辨析分类"></div>
-              <div id="comparisonMatrix" class="comparison-matrix"></div>
-            </article>
           </div>
         </section>
-        </div>
       </section>
     </main>
 
