@@ -584,7 +584,9 @@ addGaokaoGrammarSupplements();
 addBluebookGrammarSupplementsV2();
 addGaokaoCleanGrammarSupplementsV2();
 normalizeKanzenLibrary();
+consolidateGrammarCards();
 auditConnectionAndCollocationDetails();
+applyConnectionCompletenessPatches();
 improveExampleLibrary();
 upgradeChallengeLibrary();
 applyUsageFlagSchema();
@@ -2146,6 +2148,157 @@ function normalizeKanzenLibrary() {
   }
 }
 
+// A card is a learning unit, not merely a surface string.  This registry is
+// intentionally curated: same-looking but different constructions (for
+// example から "because" vs から "from") must never be merged by a fuzzy rule.
+function consolidateGrammarCards() {
+  const specs = [
+    ["condition-6-ものなら", ["counterfactual-2-ものなら"], ["ものなら"]],
+    ["concession-4-たとえ-ても", ["condition-12-たとえ-ても"], ["たとえ〜ても", "たとえ...ても"]],
+    ["guess-6-まい", ["prohibition-3-まい"], ["まい"]],
+    ["hearsay-9-みたいだ", ["example-1-みたいだ"], ["みたいだ", "みたいです"]],
+    ["obligation-2-べきだ", ["advice-2-べきだ"], ["べきだ", "べきです"]],
+    ["basis-9-限りでは", ["limitation-14-限りでは"], ["限りでは", "かぎりでは"]],
+    ["desire-1-たい", ["intention-0-たい", "desire-5-たいです"], ["たい", "たいです"]],
+    ["request-3-願えませんでしょうか", ["request-6-願えませんでしょうか"], ["願えませんでしょうか"]],
+    ["advice-3-ことだ", ["sentence_end-1-ことだ"], ["ことだ", "ことです"]],
+    ["counterfactual-1-ところだった", ["experience-2-ところだった"], ["ところだった", "ところでした"]],
+    ["sequence-2-ながら", ["sequence-4-ながら"], ["ながら"]],
+    ["sequence-3-うちに", ["sequence-5-うちに"], ["うちに"]],
+    ["explanation-2-わけだ", ["result-3-わけだ", "sentence_end-2-わけだ"], ["わけだ", "わけです"]],
+    ["explanation-6-というものだ", ["sentence_end-3-というものだ"], ["というものだ", "というものです"]],
+    ["basis-2-から見ると", ["evaluation-2-から見ると"], ["から見ると", "から見れば", "から見て"]],
+    ["basis-6-いかんによって", ["topic-5-いかんによって"], ["いかんによって", "如何によって"]],
+    ["time-3-次第", ["time-9-次第"], ["次第", "しだい"]],
+    ["example-0-など", ["example-4-など"], ["など", "等"]],
+    ["purpose-1-ために", ["purpose-6-ために-目的"], ["ために（目的）", "ために"]],
+    ["purpose-2-ように", ["purpose-5-ように-目的"], ["ように（目的）", "ように"]],
+    ["guess-16-そうだ-样态", ["guess-2-そうだ", "guess-7-そうです-样态"], ["そうだ（様態）", "そうです（様態）", "そうだ（样态）", "そうです（样态）"]],
+    ["hearsay-2-らしい", ["hearsay-5-らしいです"], ["らしい", "らしいです"]],
+    ["permission-0-てもいい", ["permission-7-てもいいです"], ["てもいい", "てもいいです"]],
+    ["intention-1-つもりだ", ["intention-5-つもりです"], ["つもりだ", "つもりです"]],
+    ["time-0-ところだ", ["time-4-ところです"], ["ところだ", "ところです"]],
+    ["obligation-0-なければならない", ["obligation-4-なければなりません"], ["なければならない", "なければなりません"]],
+    ["prohibition-0-てはいけない", ["prohibition-4-てはいけません"], ["てはいけない", "てはいけません"]]
+  ];
+  const byId = new Map(GRAMMAR_GROUPS.flatMap((group) => group.expressions.map((item) => [item.id, { group, item }])));
+  const migration = {};
+  const report = [];
+
+  for (const [primaryId, duplicateIds, variants] of specs) {
+    const primaryEntry = byId.get(primaryId);
+    if (!primaryEntry) continue;
+    const { group: primaryGroup, item: primary } = primaryEntry;
+    primary.relatedGroups = [...new Set([...(primary.relatedGroups || []), primaryGroup.id])];
+    primary.mergedFromIds = [...new Set([...(primary.mergedFromIds || [])])];
+    primary.variants = [...new Set([...(primary.variants || []), ...variants])];
+    const merged = [];
+    for (const duplicateId of duplicateIds) {
+      const entry = byId.get(duplicateId);
+      if (!entry || entry.item === primary) continue;
+      mergeExpressionDetails(primary, entry.item);
+      primary.relatedGroups = [...new Set([...primary.relatedGroups, entry.group.id])];
+      primary.mergedFromIds = [...new Set([...primary.mergedFromIds, duplicateId, ...(entry.item.mergedFromIds || [])])];
+      primary.variants = [...new Set([...primary.variants, entry.item.pattern, ...(entry.item.variants || [])])];
+      entry.group.expressions = entry.group.expressions.filter((item) => item.id !== duplicateId);
+      migration[duplicateId] = primary.id;
+      merged.push(duplicateId);
+    }
+    if (merged.length) report.push({ primaryId, pattern: primary.pattern, mergedFromIds: merged, relatedGroups: primary.relatedGroups });
+  }
+
+  const sensePatches = {
+    "reason-0-から": { pattern: "から（原因）", variants: ["から"], homographKey: "kara" },
+    "causeeffect-0-から": { pattern: "から（起点）", variants: ["から"], homographKey: "kara" },
+    "reason-2-ために": { pattern: "ために（原因）", variants: ["ために"], homographKey: "tameni" },
+    "purpose-1-ために": { pattern: "ために（目的）", variants: ["ために"], homographKey: "tameni" },
+    "purpose-2-ように": { pattern: "ように（目的）", variants: ["ように"], homographKey: "youni" },
+    "quote-4-ように-引用内容": { variants: ["ように"], homographKey: "youni" },
+    "desire-3-ものだ": { pattern: "ものだ（願望）", variants: ["ものだ", "たいものだ", "てほしいものだ"], homographKey: "monoda" },
+    "experience-3-ものだ": { pattern: "ものだ（回想習慣）", variants: ["ものだ", "たものだ"], homographKey: "monoda" },
+    "sentence_end-0-ものだ": { pattern: "ものだ（感慨・一般論）", meaning: "真是……；本来就……", variants: ["ものだ"], homographKey: "monoda" },
+    "guess-16-そうだ-样态": { pattern: "そうだ（様態）", homographKey: "souda" },
+    "hearsay-0-そうだ-伝聞": { homographKey: "souda" }
+  };
+  for (const [id, patch] of Object.entries(sensePatches)) {
+    const entry = byId.get(id);
+    if (!entry) continue;
+    Object.assign(entry.item, patch);
+    entry.item.variants = [...new Set([...(entry.item.variants || []), ...(patch.variants || [])])];
+  }
+
+  // 这两条是近义表达，不互为检索别名；各自的书面、口语变体要回到本主卡。
+  const additionVariantPatches = {
+    "addition-1-ばかりでなく": {
+      variants: ["ばかりではなく", "ばかりじゃなく", "ばかりじゃなくて"],
+      aliases: ["不但而且"]
+    },
+    "addition-2-だけではなく": {
+      variants: ["だけでなく", "だけじゃなく", "だけじゃなくて"],
+      aliases: ["不仅", "不只是"]
+    }
+  };
+  for (const [id, patch] of Object.entries(additionVariantPatches)) {
+    const entry = byId.get(id);
+    if (!entry) continue;
+    entry.item.variants = [...new Set([...(entry.item.variants || []), ...patch.variants])];
+    entry.item.searchAliases = patch.aliases;
+  }
+
+  const senses = new Map();
+  for (const group of GRAMMAR_GROUPS) {
+    for (const item of group.expressions) {
+      item.relatedGroups = [...new Set([group.id, ...(item.relatedGroups || [])])];
+      item.variants = [...new Set([...(item.variants || []), ...readablePatternKeys(item.pattern)])];
+      if (item.homographKey) (senses.get(item.homographKey) || senses.set(item.homographKey, []).get(item.homographKey)).push(item);
+    }
+  }
+  for (const [key, items] of senses) {
+    if (items.length < 2) continue;
+    for (const item of items) {
+      item.homographIds = items.filter((other) => other.id !== item.id).map((other) => other.id);
+      item.homographLabel = "同形异义：请按意思和接续区分";
+    }
+  }
+  globalThis.GRAMMAR_CARD_ID_MIGRATIONS = migration;
+  globalThis.GRAMMAR_CARD_MERGE_REPORT = report;
+}
+
+function applyConnectionCompletenessPatches() {
+  const patches = {
+    "reason-0-から": "动词/い形容词普通形 + から；な形容词词干/名词 + だから。丁寧形也可接から。",
+    "causeeffect-0-から": "名词 + から（表示起点、来源或材料）；不可与原因用法混同。",
+    "reason-2-ために": "动词/い形容词普通形 + ために；な形容词 + なために；名词 + のために。表示原因时多用于客观结果。",
+    "purpose-1-ために": "动词辞书形 + ために（前后主语通常一致，前项为意志动作）；名词 + のために。",
+    "purpose-2-ように": "动词辞书形/ない形 + ように；尤其接可能形、非意志动词或状态表达。不可直接用意志动词辞书形表示目的。",
+    "guess-16-そうだ-样态": "动词ます形去ます + そうだ；い形容词词干 + そうだ；な形容词词干 + そうだ。特殊：いい→よさそう、ない→なさそう。",
+    "hearsay-0-そうだ-伝聞": "动词/い形容词普通形 + そうだ；な形容词/名词 + だそうだ。传闻用法不接ます形词干。",
+    "hearsay-2-らしい": "动词/い形容词普通形 + らしい；な形容词词干/名词 + らしい。",
+    "hearsay-9-みたいだ": "动词/い形容词普通形 + みたいだ；な形容词词干/名词 + みたいだ。后接名词用みたいな，后接动词或形容词用みたいに。",
+    "obligation-2-べきだ": "动词辞书形 + べきだ；する→するべきだ/すべきだ。形容词、名词不能直接接。",
+    "permission-0-てもいい": "动词て形 + もいい（です）。表示许可；名词或形容词不能直接接。",
+    "prohibition-0-てはいけない": "动词て形 + はいけない（です）。表示禁止；口语常说ちゃいけない。",
+    "obligation-0-なければならない": "动词ない形去ない + なければならない（なりません）。口语可缩为なきゃならない。",
+    "intention-1-つもりだ": "动词辞书形/ない形 + つもりだ（です）。名词 + のつもりだ另表“当作、以为”，与计划义分开理解。",
+    "desire-1-たい": "动词ます形去ます + たい（です）。主语通常为第一人称；第三人称多用たがる。",
+    "advice-3-ことだ": "动词辞书形/ない形 + ことだ（です）。用于忠告、诀窍；名词和形容词不能直接接。",
+    "counterfactual-1-ところだった": "动词辞书形 + ところだった（です）。表示差一点发生，常与危険・失敗等结果搭配。",
+    "sequence-2-ながら": "动词ます形去ます + ながら。前后动作主体相同，主要动作放在后项。",
+    "sequence-3-うちに": "动词普通形/い形容词普通形 + うちに；な形容词 + なうちに；名词 + のうちに。",
+    "explanation-2-わけだ": "动词/い形容词普通形 + わけだ；な形容词 + なわけだ；名词 + のわけだ。",
+    "explanation-6-というものだ": "动词/い形容词普通形 + というものだ；な形容词/名词 + だというものだ。",
+    "basis-2-から見ると": "名词 + から見ると／から見れば／から見て。表示判断的立场、视角或标准。",
+    "basis-6-いかんによって": "名词 + いかんによって（如何によって）。书面正式表达，常接结果、决定或变化。",
+    "time-3-次第": "动词ます形去ます + 次第。前项一完成便立即做后项；后项常为意志、请求或通知。",
+    "example-0-など": "名词 + など（等）；也可用名词 + などの + 名词、名词 + などを/に。"
+  };
+  for (const group of GRAMMAR_GROUPS) {
+    for (const item of group.expressions) {
+      if (patches[item.id]) item.connection = patches[item.id];
+    }
+  }
+}
+
 function stableExpressionId(groupId, pattern, index) {
   return `${groupId}-${index}-${String(pattern).replace(/[^\p{Letter}\p{Number}]+/gu, "-").replace(/^-|-$/g, "").toLowerCase()}`;
 }
@@ -2691,9 +2844,12 @@ function normalizeReadablePattern(pattern) {
 }
 
 function readablePatternKeys(pattern) {
-  const raw = String(pattern || "").replace(/[「」『』（）()【】\[\]\s　]/g, "");
+  const raw = String(pattern || "").replace(/[「」『』\s　]/g, "");
   const parts = raw.split(/[\/／・、,]/).filter(Boolean);
-  return (parts.length ? parts : [raw]).map(normalizeReadablePattern);
+  return [...new Set((parts.length ? parts : [raw]).flatMap((part) => [
+    normalizeReadablePattern(part),
+    normalizeReadablePattern(part.replace(/[（(【\[].*?[）)】\]]/g, ""))
+  ]).filter(Boolean))];
 }
 
 function upgradeChallengeLibrary() {

@@ -1,9 +1,12 @@
 {
-  "generatedAt": "2026-07-23T06:02:40.721Z",
+  "generatedAt": "2026-08-13T01:42:19.208Z",
   "files": [
     "index.html",
     "styles.css",
     "app.js",
+    "search-engine.js",
+    "furigana-data.js",
+    "comparison-data.js",
     "content-data.js",
     "conjugation.html",
     "conjugation.css",

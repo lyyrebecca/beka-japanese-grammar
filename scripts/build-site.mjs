@@ -11,6 +11,7 @@ const files = [
   ["app.js", "application/javascript; charset=utf-8"],
   ["search-engine.js", "application/javascript; charset=utf-8"],
   ["furigana-data.js", "application/javascript; charset=utf-8"],
+  ["comparison-data.js", "application/javascript; charset=utf-8"],
   ["content-data.js", "application/javascript; charset=utf-8"],
   ["conjugation.html", "text/html; charset=utf-8"],
   ["conjugation.css", "text/css; charset=utf-8"],

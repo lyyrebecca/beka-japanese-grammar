@@ -123,20 +123,76 @@
     return value == null || value === "" ? [] : [value];
   }
 
+  function expressionForms(item) {
+    const sourceForms = [
+      { value: item.pattern, kind: "pattern" },
+      ...asList(item.variants).map((value) => ({ value, kind: "variant" }))
+    ].filter(({ value }) => Boolean(value));
+    const seen = new Set();
+    return sourceForms.flatMap(({ value, kind }) => patternVariants(value).map((pattern) => ({
+      value: pattern,
+      kind,
+      searchValues: textVariants(pattern)
+    }))).filter((entry) => {
+      // Keep the canonical pattern ahead of an identical entry in variants.
+      const key = compact(entry.value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function aliasForms(item) {
+    const seen = new Set();
+    return asList(item.searchAliases).flatMap(patternVariants).map((alias) => ({
+      value: alias,
+      searchValues: textVariants(alias)
+    })).filter((entry) => {
+      const key = compact(entry.value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   function itemFields(item) {
-    const patterns = patternVariants(item.pattern);
-    const aliases = asList(item.searchAliases).flatMap(patternVariants);
+    const forms = expressionForms(item);
+    const aliases = aliasForms(item);
     return {
-      patterns,
+      forms,
+      patterns: forms.map((entry) => entry.value),
       aliases,
-      patternSearchValues: [...new Set(patterns.flatMap(textVariants))],
-      aliasSearchValues: [...new Set(aliases.flatMap(textVariants))],
+      patternSearchValues: [...new Set(forms.flatMap((entry) => entry.searchValues))],
+      aliasSearchValues: [...new Set(aliases.flatMap((entry) => entry.searchValues))],
       meaning: compact(item.meaning),
       connection: compact(item.connection),
       collocation: compact(item.collocation),
       tags: asList(item.tags).map(compact).filter(Boolean),
       metadata: compact([item.source, item.sourceBook, item.sourceLesson, ...(item.usageFlags ? Object.keys(item.usageFlags).filter((key) => item.usageFlags[key]) : [])].join(" "))
     };
+  }
+
+  function exactFormMatch(forms, rawQuery) {
+    const query = compact(rawQuery);
+    if (!query) return null;
+    for (const form of forms) {
+      const direct = compact(form.value);
+      if (query === direct) return { ...form, matchedBy: form.kind };
+      const kana = compact(normalizeKana(form.value));
+      if (query === kana) return { ...form, matchedBy: `${form.kind}-kana` };
+      const romaji = compact(kanaToRomaji(normalizeKana(form.value)));
+      if (romaji && romaji !== direct && query === romaji) return { ...form, matchedBy: `${form.kind}-romaji` };
+    }
+    return null;
+  }
+
+  function matchReason(match, alias = false) {
+    if (!match) return "";
+    if (alias) return `检索别名一致：${match.value}`;
+    const label = match.kind === "variant" ? "表达变体" : "句式";
+    if (match.matchedBy.endsWith("-romaji")) return `${label}罗马音命中：${match.value}`;
+    if (match.matchedBy.endsWith("-kana")) return `${label}假名对应：${match.value}`;
+    return match.kind === "variant" ? `表达变体完全一致：${match.value}` : "句式完全一致";
   }
 
   function itemSemanticText(group, fields) {
@@ -172,8 +228,18 @@
     return `${group.id}::${item.id}`;
   }
 
-  function makeResult(group, item, tier, score, reasons) {
-    return { key: resultKey(group, item), groupId: group.id, groupTitle: group.title, item, tier, score, reasons: [...new Set(reasons)] };
+  function makeResult(group, item, tier, score, reasons, match = null) {
+    return {
+      key: resultKey(group, item),
+      groupId: group.id,
+      groupTitle: group.title,
+      item,
+      tier,
+      score,
+      reasons: [...new Set(reasons.filter(Boolean))],
+      matchedBy: match?.matchedBy || "",
+      matchedValue: match?.value || ""
+    };
   }
 
   function sortResults(results) {
@@ -187,7 +253,6 @@
     const empty = { query: rawQuery, normalizedQuery, counts: { exact: 0, strong: 0, semantic: 0, structural: 0 }, exact: [], strong: [], semantic: [], structural: [], best: null };
     if (!normalizedQuery) return empty;
 
-    const queryVariants = textVariants(rawQuery);
     const querySemanticSets = semanticSetIdsForQuery(rawQuery);
     const candidates = [];
     groups.forEach((group, groupOrder) => {
@@ -202,28 +267,28 @@
     const classified = new Set();
     candidates.forEach((candidate) => {
       const { group, item, fields } = candidate;
-      const patternExact = fields.patternSearchValues.some((value) => queryVariants.includes(value));
-      const aliasExact = fields.aliasSearchValues.some((value) => queryVariants.includes(value));
-      if (patternExact || aliasExact) {
-        exact.push(makeResult(group, item, "exact", patternExact ? 1000 : 960, [patternExact ? "句式完全一致" : "检索别名一致"]));
+      const patternMatch = exactFormMatch(fields.forms, rawQuery);
+      const aliasMatch = exactFormMatch(fields.aliases.map((entry) => ({ ...entry, kind: "alias" })), rawQuery);
+      if (patternMatch) {
+        exact.push(makeResult(group, item, "exact", 1000, [matchReason(patternMatch)], patternMatch));
         classified.add(resultKey(group, item));
         return;
       }
 
       const patternContains = fields.patternSearchValues.some((value) => value.length > normalizedQuery.length && value.includes(normalizedQuery));
-      const aliasContains = fields.aliasSearchValues.some((value) => value.length > normalizedQuery.length && value.includes(normalizedQuery));
+      const aliasContains = Boolean(aliasMatch) || fields.aliasSearchValues.some((value) => value.length > normalizedQuery.length && value.includes(normalizedQuery));
       const meaningMatch = fields.meaning.includes(normalizedQuery) || (normalizedQuery.length >= 3 && normalizedQuery.includes(fields.meaning));
       const connectionMatch = fields.connection.includes(normalizedQuery) || fields.collocation.includes(normalizedQuery);
       const semanticGroupMatch = querySemanticSets.length && querySemanticSets.some((id) => itemSemanticText(group, fields).includes(compact(SEMANTIC_SETS.find((set) => set.id === id)?.terms[0])));
-      const score = (patternContains ? 500 : 0) + (aliasContains ? 450 : 0) + (meaningMatch ? 300 : 0) + (connectionMatch ? 140 : 0) + (semanticGroupMatch ? 90 : 0);
+      const score = (patternContains ? 500 : 0) + (aliasContains ? (aliasMatch ? 520 : 450) : 0) + (meaningMatch ? 300 : 0) + (connectionMatch ? 140 : 0) + (semanticGroupMatch ? 90 : 0);
       if (score) {
         const reasons = [];
         if (patternContains) reasons.push("句式直接匹配");
-        if (aliasContains) reasons.push("别名直接匹配");
+        if (aliasContains) reasons.push(aliasMatch ? matchReason(aliasMatch, true) : "别名直接匹配");
         if (meaningMatch) reasons.push("核心意思高度一致");
         if (connectionMatch) reasons.push("接续或搭配匹配");
         if (semanticGroupMatch) reasons.push(`对应意思：${group.title}`);
-        strong.push(makeResult(group, item, "strong", score, reasons));
+        strong.push(makeResult(group, item, "strong", score, reasons, aliasMatch));
         classified.add(resultKey(group, item));
       }
     });
@@ -263,7 +328,7 @@
         return;
       }
 
-      const components = commonComponents(rawQuery, [...fields.patterns, ...fields.aliases]);
+      const components = commonComponents(rawQuery, [...fields.patterns, ...fields.aliases.map((entry) => entry.value)]);
       if (components.length) {
         structural.push(makeResult(group, item, "structural", components.reduce((sum, part) => sum + compact(part).length * 22, 0), [`共享构造：${components.slice(0, 2).join("、")}`]));
       }

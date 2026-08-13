@@ -29,7 +29,9 @@ def expression_index(groups: list[dict]) -> dict[str, list[dict]]:
     result: dict[str, list[dict]] = {}
     for group in groups:
         for item in group['expressions']:
-            result.setdefault(item['pattern'], []).append({**item, '_group': group['id']})
+            indexed = {**item, '_group': group['id']}
+            for key in {item['pattern'], *(item.get('variants') or [])}:
+                result.setdefault(key, []).append(indexed)
     return result
 
 
@@ -49,20 +51,20 @@ def main() -> None:
 
     def check(pattern: str, predicate, note: str) -> None:
         cards = expression_index(groups).get(pattern, [])
-        passed = bool(cards) and all(predicate(card) for card in cards)
+        passed = bool(cards) and predicate(cards)
         accuracy_checks.append({'pattern': pattern, 'passed': passed, 'note': note, 'cards': len(cards)})
 
-    check('に従って / に従い', lambda item: '辞书形 + に従って；名词 + に従って' in item['connection'], '动词变化与名词遵从两种接续均保留。')
-    check('ことに', lambda item: 'ことにする' not in item['connection'] and 'ことにしている' not in item['collocation'], '感叹评价句型不得混入「ことにする」的个人决定用法。')
-    check('ことにする', lambda item: 'ことにする' in item['connection'], '个人决定的接续保留。')
-    check('ことになる', lambda item: 'ことになる' in item['connection'], '外部决定或结果的接续保留。')
-    check('ように', lambda item: '可能形' in item['connection'] and '非意志动词' in item['connection'], '目的用法正确区分可能/非意志动词。')
-    check('ために', lambda item: '意志动词' in item['connection'] and '原因' in item['connection'], '目的和原因两种用法均明确标出。')
-    check('そうだ', lambda item: '样态' in item['connection'] and '传闻' in item['connection'], '样态与传闻接续分开说明。')
-    check('に限る', lambda item: '辞书形' in item['connection'] and 'ない形' in item['connection'], '「最好」与「限定」的接续未遗漏。')
-    check('限りは', lambda item: '限りは' in item['connection'], '条件表达保留。')
-    check('に対して', lambda item: 'に対する' in item['connection'] and 'のに対して' in item['connection'], '对象与对比两种用法均保留。')
-    check('おそれがある', lambda item: '辞书形 + おそれがある' in item['connection'], '风险表达接续准确。')
+    check('に従って / に従い', lambda cards: all('辞书形 + に従って；名词 + に従って' in item['connection'] for item in cards), '动词变化与名词遵从两种接续均保留。')
+    check('ことに', lambda cards: all('ことにする' not in item['connection'] and 'ことにしている' not in item['collocation'] for item in cards), '感叹评价句型不得混入「ことにする」的个人决定用法。')
+    check('ことにする', lambda cards: any('ことにする' in item['connection'] for item in cards), '个人决定的接续保留。')
+    check('ことになる', lambda cards: any('ことになる' in item['connection'] for item in cards), '外部决定或结果的接续保留。')
+    check('ように', lambda cards: any('可能形' in item['connection'] and '非意志动词' in item['connection'] for item in cards), '目的用法正确区分可能/非意志动词。')
+    check('ために', lambda cards: any('意志动词' in item['connection'] for item in cards) and any('原因' in item['connection'] for item in cards), '目的和原因两种用法均明确标出。')
+    check('そうだ', lambda cards: any('ます形去ます' in item['connection'] for item in cards) and any('だそうだ' in item['connection'] for item in cards), '样态与传闻接续分开说明。')
+    check('に限る', lambda cards: all('辞书形' in item['connection'] and 'ない形' in item['connection'] for item in cards), '「最好」与「限定」的接续未遗漏。')
+    check('限りは', lambda cards: all('限りは' in item['connection'] for item in cards), '条件表达保留。')
+    check('に対して', lambda cards: all('に対する' in item['connection'] and 'のに対して' in item['connection'] for item in cards), '对象与对比两种用法均保留。')
+    check('おそれがある', lambda cards: all('辞书形 + おそれがある' in item['connection'] for item in cards), '风险表达接续准确。')
 
     # Render a representative card with the same longest-first replacement used by app.js.
     sample = 'に従って / に従い'

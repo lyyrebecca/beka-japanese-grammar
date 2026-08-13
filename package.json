@@ -2,7 +2,11 @@
   "scripts": {
     "build": "node scripts/build-site.mjs",
     "audit:conjugation": "node scripts/audit-conjugation-data.mjs",
-    "audit:search": "node scripts/audit-search-ranking.mjs"
+    "audit:search": "node scripts/audit-search-ranking.mjs",
+    "audit:grammar": "node scripts/audit-grammar-consolidation.mjs",
+    "audit:connection-tables": "node scripts/audit-connection-tables.mjs",
+    "migrate:backup": "node scripts/migrate-grammar-backup.mjs",
+    "audit:comparison": "node scripts/audit-comparison-matrix.mjs"
   },
   "devDependencies": {}
 }

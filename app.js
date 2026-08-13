@@ -3,7 +3,7 @@ const THEME_KEY = "jp-grammar-quest-theme-v1";
 const CUSTOM_CONTENT_KEY = "jp-grammar-custom-content-v1";
 
 const EMPTY_PROGRESS = { completed: {}, hard: {}, answers: {}, lastGroup: "" };
-const EMPTY_CUSTOM = { edits: {}, notes: {}, additions: {}, deleted: {} };
+const EMPTY_CUSTOM = { edits: {}, notes: {}, additions: {}, deleted: {}, preferences: {}, comparison: { sections: {}, profiles: {}, memberships: {} }, schemaVersion: 3 };
 
 const state = {
   groupId: "",
@@ -12,6 +12,7 @@ const state = {
   searchResultKey: "",
   level: "all",
   expandedGroups: {},
+  comparisonSectionId: "",
   theme: loadTheme(),
   progress: loadProgress(),
   custom: loadCustomContent()
@@ -59,6 +60,8 @@ function bindEvents() {
     saveProgress();
   });
   $("addExpressionBtn").addEventListener("click", () => openExpressionEditor("add"));
+  $("addComparisonExpressionBtn").addEventListener("click", () => openExpressionEditor("add", null, { comparisonSectionId: state.comparisonSectionId }));
+  $("editComparisonSectionBtn").addEventListener("click", openComparisonSectionEditor);
   $("exportBackupBtn").addEventListener("click", exportBackup);
   $("importBackupBtn").addEventListener("click", importBackup);
   $("resetProgressBtn").addEventListener("click", () => {
@@ -89,7 +92,7 @@ function saveProgress() {
 
 function loadCustomContent() {
   try {
-    return { ...structuredClone(EMPTY_CUSTOM), ...(JSON.parse(localStorage.getItem(CUSTOM_CONTENT_KEY)) || {}) };
+    return migrateCustomContent(JSON.parse(localStorage.getItem(CUSTOM_CONTENT_KEY)) || {});
   } catch {
     return structuredClone(EMPTY_CUSTOM);
   }
@@ -102,7 +105,7 @@ function saveCustomContent() {
 function exportBackup() {
   const backup = {
     app: "beka-japanese-grammar",
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     progress: state.progress,
     custom: state.custom,
@@ -126,12 +129,12 @@ function importBackup() {
     if (!file) return;
     try {
       const backup = JSON.parse(await file.text());
-      if (backup.app !== "beka-japanese-grammar" || ![1, 2].includes(backup.version)) {
+      if (backup.app !== "beka-japanese-grammar" || ![1, 2, 3].includes(backup.version)) {
         throw new Error("invalid backup");
       }
       if (!confirm("导入会覆盖当前浏览器中的学习记录、笔记和自定义条目，确定继续吗？")) return;
       state.progress = { ...EMPTY_PROGRESS, ...(backup.progress || {}) };
-      state.custom = { ...structuredClone(EMPTY_CUSTOM), ...(backup.custom || {}) };
+      state.custom = migrateCustomContent(backup.custom || {});
       if (backup.theme === "day" || backup.theme === "night") state.theme = backup.theme;
       saveProgress();
       saveCustomContent();
@@ -185,14 +188,98 @@ function mergedGroups() {
 
 function mergeExpression(item, userAdded) {
   const edit = state.custom.edits[item.id] || {};
+  const preference = state.custom.preferences[item.id] || {};
   const note = state.custom.notes[item.id] ?? edit.userNote ?? item.userNote ?? "";
   return {
     ...item,
     ...edit,
+    usageFlags: preference.usageFlags || edit.usageFlags || item.usageFlags,
     userNote: note,
     _userAdded: userAdded,
     _customized: Boolean(userAdded || Object.keys(edit).length || note)
   };
+}
+
+function migrateCustomContent(raw = {}) {
+  const custom = { ...structuredClone(EMPTY_CUSTOM), ...(raw || {}) };
+  custom.edits ||= {};
+  custom.notes ||= {};
+  custom.additions ||= {};
+  custom.deleted ||= {};
+  custom.preferences ||= {};
+  custom.comparison ||= {};
+  custom.comparison.sections ||= {};
+  custom.comparison.profiles ||= {};
+  custom.comparison.memberships ||= {};
+  const migrations = globalThis.GRAMMAR_CARD_ID_MIGRATIONS || {};
+  const reports = globalThis.GRAMMAR_CARD_MERGE_REPORT || [];
+  const appendNote = (id, text) => {
+    if (!text) return;
+    custom.notes[id] = [custom.notes[id], text].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join("\n\n");
+  };
+  const supplement = (item, label) => {
+    const fields = [
+      ["文型", item.pattern], ["意思", item.meaning], ["接续", item.connection], ["固定搭配", item.collocation],
+      ["语感", item.nuance], ["例句", item.example], ["译文", item.translation], ["来源", [item.sourceBook, item.sourceLesson].filter(Boolean).join(" · ")]
+    ].filter(([, value]) => value);
+    return fields.length ? `【原自定义补充${label ? `：${label}` : ""}】\n${fields.map(([name, value]) => `${name}：${value}`).join("\n")}` : "";
+  };
+  const movePreference = (fromId, toId, edit = {}) => {
+    if (!edit.usageFlags) return;
+    custom.preferences[toId] = {
+      ...(custom.preferences[toId] || {}),
+      usageFlags: { ...(custom.preferences[toId]?.usageFlags || {}), ...edit.usageFlags }
+    };
+  };
+
+  for (const [fromId, toId] of Object.entries(migrations)) {
+    if (custom.notes[fromId]) appendNote(toId, custom.notes[fromId]);
+    if (custom.edits[fromId]) {
+      appendNote(toId, supplement(custom.edits[fromId], `已合并卡片 ${fromId}`));
+      movePreference(fromId, toId, custom.edits[fromId]);
+      delete custom.edits[fromId];
+    }
+    delete custom.notes[fromId];
+  }
+
+  // Respect a deletion only when the user had hidden every card in a merge
+  // cluster; deleting one historical duplicate must not hide the new main card.
+  for (const report of reports) {
+    const oldIds = [report.primaryId, ...(report.mergedFromIds || [])];
+    if (oldIds.every((id) => custom.deleted[id])) custom.deleted[report.primaryId] = true;
+    for (const id of report.mergedFromIds || []) delete custom.deleted[id];
+  }
+
+  const builtIns = GRAMMAR_GROUPS.flatMap((group) => group.expressions.map((item) => ({ group, item })));
+  const compact = (value) => String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const exactBuiltInMatch = (addition, groupId) => {
+    const key = compact(addition.pattern);
+    if (!key) return null;
+    const matches = builtIns.filter(({ group, item }) => {
+      if (!(item.relatedGroups || [group.id]).includes(groupId)) return false;
+      return [item.pattern, ...(item.variants || [])].some((value) => compact(value) === key);
+    });
+    return matches.length === 1 ? matches[0].item : null;
+  };
+  for (const [groupId, additions] of Object.entries(custom.additions)) {
+    const kept = [];
+    for (const addition of additions || []) {
+      const target = exactBuiltInMatch(addition, groupId);
+      if (!target) {
+        kept.push(addition);
+        continue;
+      }
+      appendNote(target.id, supplement(addition, `自定义条目 ${addition.pattern || addition.id}`));
+      movePreference(addition.id, target.id, addition);
+      if (custom.notes[addition.id]) appendNote(target.id, custom.notes[addition.id]);
+      delete custom.notes[addition.id];
+      delete custom.edits[addition.id];
+      delete custom.deleted[addition.id];
+    }
+    custom.additions[groupId] = kept;
+  }
+  custom.schemaVersion = 3;
+  return custom;
 }
 
 function currentGroup() {
@@ -302,7 +389,7 @@ function renderSearchGroupList(results) {
         const items = results[tier];
         return `<details class="search-nav-tier" ${open ? "open" : ""}>
           <summary>${escapeHtml(title)} <em>${formatSearchCount(results.counts[tier])}</em></summary>
-          ${items.length ? `<div>${items.map((result) => `<button type="button" data-search-action="focus" data-result-key="${escapeAttr(result.key)}"><span lang="ja">${renderJapaneseText(result.item.pattern)}</span><small>${escapeHtml(result.item.meaning)}</small></button>`).join("")}</div>` : ""}
+          ${items.length ? `<div>${items.map((result) => `<button class="search-nav-result${state.searchResultKey === result.key ? " is-current" : ""}" type="button" data-search-action="focus" data-result-key="${escapeAttr(result.key)}"${state.searchResultKey === result.key ? " aria-current=\"true\"" : ""}><span lang="ja">${renderJapaneseText(searchResultPattern(result))}</span><small>${escapeHtml(result.item.meaning)}</small></button>`).join("")}</div>` : ""}
         </details>`;
       }).join("")}
     </section>`;
@@ -329,9 +416,9 @@ function renderSearchResults(results) {
         <span>相近意思 ${formatSearchCount(results.counts.semantic)}</span>
         <span>相近构造 ${formatSearchCount(results.counts.structural)}</span>
       </div>
-      ${results.best ? `<p class="best-match">最佳匹配：<strong lang="ja">${renderJapaneseText(results.best.item.pattern)}</strong><span>${escapeHtml(results.best.reasons[0])}</span></p>` : `<p class="search-no-related">没有找到足够相关的词条；可以换用中文意思、假名、汉字或罗马音再次检索。</p>`}
-      ${renderSearchTier("exact", "完全一致", "句式或检索别名与输入相同。", results, true)}
-      ${renderSearchTier("strong", "强相关", "句式、罗马音、意思或接续直接命中。", results, true)}
+      ${results.best ? `<p class="best-match">最佳匹配：<strong lang="ja">${renderJapaneseText(searchResultPattern(results.best))}</strong><span>${escapeHtml(results.best.reasons[0])}</span></p>` : `<p class="search-no-related">没有找到足够相关的词条；可以换用中文意思、假名、汉字或罗马音再次检索。</p>`}
+      ${renderSearchTier("exact", "完全一致", "主句式、表达变体或对应罗马音与输入相同。", results, true)}
+      ${renderSearchTier("strong", "强相关", "检索别名、意思、接续或搭配直接命中。", results, true)}
       ${renderSearchTier("semantic", "相近意思", "可用来比较相同功能下的语感差异。", results, !directCount)}
       ${renderSearchTier("structural", "相近构造", "共享关键构造，但意思未必可以直接互换。", results, !directCount)}
       ${totalRelated > 24 ? `<p class="search-limit-note">每类优先展示前 ${GrammarSearch.MAX_RESULTS_PER_TIER} 条；请用更具体的关键词继续缩小范围。</p>` : ""}
@@ -364,29 +451,45 @@ function formatSearchCount(count) {
 function renderSearchResultCard(result, open) {
   const item = result.item;
   const profile = usageProfile(item);
+  const variants = renderCardVariants(item);
+  const homographs = renderHomographHint(item);
+  const matchedPattern = searchResultPattern(result);
+  const canonicalPattern = matchedPattern !== item.pattern
+    ? `<small class="search-result-canonical" lang="ja">主卡：${renderJapaneseText(item.pattern)}</small>`
+    : "";
   return `
     <details class="search-result-card" data-search-result="${escapeAttr(result.key)}" ${open ? "open" : ""}>
       <summary>
         <span class="search-result-main">
           <span class="search-result-meta"><span class="level">${escapeHtml(item.level)}</span>${renderUsageBadges(item.usageFlags)}<small>${escapeHtml(result.groupTitle)}</small></span>
-          <strong lang="ja">${renderJapaneseText(item.pattern)}</strong>
+          <strong lang="ja">${renderJapaneseText(matchedPattern)}</strong>
+          ${canonicalPattern}
           <span>${escapeHtml(item.meaning)}</span>
         </span>
         <span class="match-reasons">${result.reasons.map((reason) => `<i>${escapeHtml(reason)}</i>`).join("")}</span>
       </summary>
       <div class="search-result-detail">
         <dl>
-          <dt>接续</dt><dd lang="ja">${renderJapaneseText(item.connection || "—")}</dd>
+          ${renderConnectionField(item.connection)}
           <dt>搭配</dt><dd lang="ja">${renderJapaneseText(item.collocation || "—")}</dd>
           <dt>语感</dt><dd>${escapeHtml(item.nuance || "—")}</dd>
           <dt>正式</dt><dd>${escapeHtml(profile.formality)}</dd>
           <dt>表记</dt><dd lang="ja">${renderJapaneseText(profile.notation)}</dd>
+          ${variants}
+          ${homographs}
+          ${item.relatedGroups?.length > 1 ? `<dt>相关分类</dt><dd>${escapeHtml(item.relatedGroups.map(groupTitleForId).join(" · "))}</dd>` : ""}
           <dt>来源</dt><dd>${escapeHtml([item.sourceBook, item.sourceLesson].filter(Boolean).join(" · ") || "—")}</dd>
         </dl>
         ${item.example ? `<div class="example"><p lang="ja">${renderExample(item)}</p><small>${escapeHtml(item.translation || "")}</small></div>` : ""}
         <div class="button-row"><button class="secondary-btn compact-action" type="button" data-search-action="enter" data-group-id="${escapeAttr(result.groupId)}" data-expression-id="${escapeAttr(item.id)}">进入所属分类</button></div>
       </div>
-    </details>`;
+  </details>`;
+}
+
+function searchResultPattern(result) {
+  return result.matchedBy?.startsWith("variant") && result.matchedValue
+    ? result.matchedValue
+    : result.item.pattern;
 }
 
 function bindSearchResultActions(root) {
@@ -410,10 +513,27 @@ function clearSearch() {
 function focusSearchResult(key) {
   const card = document.querySelector(`[data-search-result="${CSS.escape(key)}"]`);
   if (!card) return;
+  state.searchResultKey = key;
+  let ancestor = card.parentElement;
+  while (ancestor) {
+    if (ancestor.tagName === "DETAILS") ancestor.open = true;
+    ancestor = ancestor.parentElement;
+  }
   card.open = true;
-  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  document.querySelectorAll('[data-search-action="focus"]').forEach((button) => {
+    const current = button.dataset.resultKey === key;
+    button.classList.toggle("is-current", current);
+    if (current) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  });
+  document.querySelectorAll(".search-result-card.is-current").forEach((item) => item.classList.remove("is-current"));
+  card.classList.add("is-current");
   card.classList.add("is-focused");
-  setTimeout(() => card.classList.remove("is-focused"), 1600);
+  requestAnimationFrame(() => {
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.querySelector("summary")?.focus({ preventScroll: true });
+    setTimeout(() => card.classList.remove("is-focused"), 1600);
+  });
 }
 
 function enterSearchResult(groupId, expressionId) {
@@ -485,6 +605,7 @@ function searchableExpressionText(item) {
     item.id,
     item.level,
     item.pattern,
+    ...(item.variants || []),
     item.meaning,
     item.connection,
     item.collocation,
@@ -638,16 +759,9 @@ function renderGroup() {
   const done = Object.keys(state.progress.completed).filter((key) => key.startsWith(`${group.id}:`)).length;
   $("progressPill").textContent = `${shownExpressions.length} 条 / ${group.expressions.length} 条`;
   renderExpressions(group, shownExpressions);
-  $("notesList").innerHTML = group.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("");
-  $("rewriteList").innerHTML = group.rewrites.length ? group.rewrites.map((item, index) => `
-    <details class="rewrite-item">
-      <summary>${index + 1}. ${escapeHtml(item[0])}</summary>
-      <p><strong>要求：</strong>${escapeHtml(item[1])}</p>
-      <p><strong>参考：</strong><span lang="ja" class="answer-ja">${annotateJapanese(item[2])}</span></p>
-    </details>
-  `).join("") : `<p class="empty-state">这个分类暂时没有改写题，先用知识卡片做整理。</p>`;
   $("progressPill").title = `练习完成 ${done} / ${shownChallenges.length}`;
   renderChallenge();
+  renderComparisonMatrix({ followTarget: true });
 }
 
 function renderExpressions(group, expressions) {
@@ -655,6 +769,8 @@ function renderExpressions(group, expressions) {
     const profile = usageProfile(item);
     const usageBadges = renderUsageBadges(item.usageFlags);
     const note = item.userNote ? `<div class="user-note"><strong>我的笔记</strong><p>${escapeHtml(item.userNote)}</p></div>` : "";
+    const variants = renderCardVariants(item);
+    const homographs = renderHomographHint(item);
     const deleteButton = item._userAdded ? `<button class="icon-btn danger" type="button" data-action="delete" data-id="${escapeAttr(item.id)}" title="删除自定义条目" aria-label="删除自定义条目">×</button>` : "";
     const restoreButton = item._customized && !item._userAdded ? `<button class="icon-btn" type="button" data-action="restore" data-id="${escapeAttr(item.id)}" title="恢复内置内容" aria-label="恢复内置内容">↺</button>` : "";
     return `
@@ -674,11 +790,14 @@ function renderExpressions(group, expressions) {
       </div>
       <p>${escapeHtml(item.meaning)}</p>
       <dl>
-        <dt>接续</dt><dd lang="ja">${renderJapaneseText(item.connection)}</dd>
+        ${renderConnectionField(item.connection)}
         <dt>搭配</dt><dd lang="ja">${renderJapaneseText(item.collocation || "—")}</dd>
         <dt>语感</dt><dd>${escapeHtml(item.nuance)}</dd>
         <dt>正式</dt><dd>${escapeHtml(profile.formality)}</dd>
         <dt>表记</dt><dd lang="ja">${renderJapaneseText(profile.notation)}</dd>
+        ${variants}
+        ${homographs}
+        ${item.relatedGroups?.length > 1 ? `<dt>相关分类</dt><dd>${escapeHtml(item.relatedGroups.map(groupTitleForId).join(" · "))}</dd>` : ""}
         <dt>来源</dt><dd>${escapeHtml([item.sourceBook, item.sourceLesson].filter(Boolean).join(" · "))}</dd>
       </dl>
       <div class="tag-row">${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
@@ -693,6 +812,106 @@ function renderExpressions(group, expressions) {
   $("expressionLadder").querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleCardAction(group, button.dataset.action, button.dataset.id));
   });
+}
+
+function renderCardVariants(item) {
+  const variants = [...new Set((item.variants || []).filter((value) => value && value !== item.pattern))];
+  return variants.length ? `<dt>表达变体</dt><dd lang="ja">${variants.map((value) => renderJapaneseText(value)).join(" ／ ")}</dd>` : "";
+}
+
+function renderConnectionField(connection) {
+  return `<dt>接续</dt><dd class="connection-cell">${renderConnectionTable(connection)}</dd>`;
+}
+
+function renderConnectionTable(connection) {
+  const rows = parseConnectionRows(connection);
+  return `<div class="connection-table-wrap"><table class="connection-table">
+    <thead><tr><th scope="col">词类 / 场景</th><th scope="col">接续形式</th><th scope="col">注意</th></tr></thead>
+    <tbody>${rows.map((row) => `<tr>
+      <th scope="row" data-label="词类 / 场景">${escapeHtml(row.scope)}</th>
+      <td data-label="接续形式" lang="ja">${renderJapaneseText(row.form)}</td>
+      <td data-label="注意">${row.note ? renderJapaneseText(row.note) : "—"}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+function parseConnectionRows(connection) {
+  const raw = String(connection || "").trim();
+  if (!raw) return [connectionRow("—", "—", "", "")];
+  const rows = [];
+  for (const clause of raw.split(/[；;]/).map((part) => part.trim()).filter(Boolean)) {
+    if (rows.length && isConnectionNote(clause)) {
+      const previous = rows[rows.length - 1];
+      previous.note = [previous.note, clause].filter(Boolean).join("；");
+      previous.raw = `${previous.raw}；${clause}`;
+      continue;
+    }
+    rows.push(parseConnectionClause(clause));
+  }
+  return rows;
+}
+
+function connectionRow(scope, form, note, raw) {
+  return { scope, form: String(form || "").replace(/^[／/・、]\s*/, "").replace(/^\+\s*/, "").trim() || "—", note, raw };
+}
+
+function isConnectionNote(clause) {
+  return /^(尤其|注意|不可|不能|不接|通常|常(?:与|用|接)|多(?:用|为)|前项|后项|前后主语|表示|用于|书面|口语|特殊)/.test(clause)
+    && !/[+＋]/.test(clause);
+}
+
+function parseConnectionClause(clause) {
+  let form = clause;
+  let note = "";
+  const sentenceEnd = clause.indexOf("。");
+  if (sentenceEnd >= 0 && sentenceEnd < clause.length - 1) {
+    form = clause.slice(0, sentenceEnd).trim();
+    note = clause.slice(sentenceEnd + 1).trim();
+  }
+
+  const explicit = form.match(/^(目的|原因|条件|样态|伝聞|传闻|特殊(?:变化)?|口语|书面|句首|句中|副词|固定搭配)\s*[：:]/);
+  if (explicit) {
+    return connectionRow(explicit[1], form.slice(explicit[0].length).trim() || "—", note, clause);
+  }
+
+  const head = form.split(/[+＋]/)[0];
+  const scopes = [...new Set(head.match(/动词|い形容词|な形容词|名词|数量词|疑问词|副词|句首|句中/g) || [])];
+  if (scopes.length > 1 && /^(动词|い形容词|な形容词|名词|数量词|疑问词|副词|句首|句中)/.test(form)) {
+    const remainder = form
+      .replace(/动词|い形容词|な形容词|名词|数量词|疑问词|副词|句首|句中/g, "")
+      .replace(/^\s*[／/・、]\s*/, "")
+      .replace(/^([^+／/]+)[／/]\1(?=\s*[+＋])/, "$1")
+      .trim();
+    return connectionRow(scopes.join(" / "), remainder || form, note, clause);
+  }
+
+  const prefix = form.match(/^(?:(?:动词|い形容词|な形容词|名词|数量词|疑问词|副词|句首|句中)(?:\s*[／/・、]\s*(?:动词|い形容词|な形容词|名词|数量词|疑问词|副词|句首|句中))*)/);
+  if (prefix) {
+    const scope = prefix[0].replace(/[／/・、]/g, " / ").replace(/\s+/g, " ").trim();
+    const remainder = form.slice(prefix[0].length).trim();
+    return connectionRow(scope, remainder || form, note, clause);
+  }
+
+  const formScope = form.match(/^(辞书形|ない形|た形|て形|ます形|意向形|ば形|可能形|受身形|使役形|普通形|连体形|终止形)/);
+  if (formScope) {
+    const verbOnly = /^(辞书形|ない形|た形|て形|ます形|意向形|可能形|受身形|使役形)/.test(formScope[1]);
+    return connectionRow(verbOnly ? "动词" : formScope[1], form, note, clause);
+  }
+
+  return connectionRow("固定形式", form, note, clause);
+}
+
+function renderHomographHint(item) {
+  if (!item.homographIds?.length) return "";
+  const related = item.homographIds
+    .map((id) => mergedGroups().flatMap((group) => group.expressions).find((candidate) => candidate.id === id))
+    .filter(Boolean)
+    .map((candidate) => `${candidate.pattern}：${candidate.meaning}`);
+  return `<dt>辨析</dt><dd>${escapeHtml(item.homographLabel || "同形异义")}${related.length ? `（${escapeHtml(related.join("；"))}）` : ""}</dd>`;
+}
+
+function groupTitleForId(id) {
+  return mergedGroups().find((group) => group.id === id)?.title || id;
 }
 
 const USAGE_BADGES = {
@@ -781,6 +1000,155 @@ function moveChallenge(delta) {
   if (!total) return;
   state.challengeIndex = (state.challengeIndex + delta + total) % total;
   renderChallenge();
+  renderComparisonMatrix({ followTarget: true });
+}
+
+function comparisonSectionsForGroup(group) {
+  const data = globalThis.GRAMMAR_COMPARISON_DATA || {};
+  const builtIn = (data.groups?.[group.id] || []).map((section) => ({ ...section, expressionIds: [...section.expressionIds] }));
+  const customSections = Object.values(state.custom.comparison?.sections?.[group.id] || {}).map((section) => ({ ...section, expressionIds: [...(section.expressionIds || [])] }));
+  const configured = [...builtIn, ...customSections];
+  const expressionIds = new Set(group.expressions.map((item) => item.id));
+  const memberships = state.custom.comparison?.memberships || {};
+  for (const [expressionId, sectionId] of Object.entries(memberships)) {
+    const section = configured.find((entry) => entry.id === sectionId);
+    if (section && expressionIds.has(expressionId) && !section.expressionIds.includes(expressionId)) section.expressionIds.push(expressionId);
+  }
+  const covered = new Set(configured.flatMap((section) => section.expressionIds));
+  const unclassified = group.expressions.filter((item) => !covered.has(item.id)).map((item) => item.id);
+  if (unclassified.length) {
+    configured.push({
+      id: "custom-supplement",
+      title: "新增／未归类补充",
+      summary: "你新添加或尚未人工归入细分意思的条目。系统不会擅自编造使用限制，请以知识卡与个人笔记为准。",
+      expressionIds: unclassified,
+      _systemSection: true
+    });
+  }
+  return configured
+    .map((section) => ({ ...section, expressionIds: section.expressionIds.filter((id) => expressionIds.has(id)) }))
+    .filter((section) => section.expressionIds.length || section._customSection);
+}
+
+function comparisonProfileFor(item) {
+  const data = globalThis.GRAMMAR_COMPARISON_DATA || {};
+  const custom = state.custom.comparison?.profiles?.[item.id] || {};
+  const baseline = data.profiles?.[item.id] || data.fallbackProfile?.(item) || {
+    coreDifference: item.nuance || item.meaning || "根据前后句的意义与接续选择。",
+    usageScene: "一般会话与写作；结合前后语境。",
+    avoidScene: "无特别禁用；按接续和语境使用。",
+    register: "普通・中性",
+    polarity: "中性（看语境）"
+  };
+  return { ...baseline, ...custom };
+}
+
+function comparisonSectionForExpression(group, expressionId) {
+  return comparisonSectionsForGroup(group).find((section) => section.expressionIds.includes(expressionId));
+}
+
+function activeComparisonSection() {
+  return comparisonSectionsForGroup(currentGroup()).find((section) => section.id === state.comparisonSectionId) || null;
+}
+
+function comparisonTargetExpression(group) {
+  const challenge = currentChallenge();
+  if (!challenge) return null;
+  const target = normalizePatternForLookup(challenge[1]);
+  const forms = (item) => [item.pattern, ...(item.variants || [])].map(normalizePatternForLookup);
+  return group.expressions.find((item) => forms(item).includes(target))
+    || group.expressions
+      .map((item) => ({ item, forms: forms(item) }))
+      .filter(({ forms }) => forms.some((form) => form && (form.includes(target) || target.includes(form))))
+      .sort((a, b) => Math.min(...b.forms.map((form) => form.length)) - Math.min(...a.forms.map((form) => form.length)))[0]?.item
+    || null;
+}
+
+function renderComparisonMatrix({ followTarget = false } = {}) {
+  const group = currentGroup();
+  const sections = comparisonSectionsForGroup(group);
+  const target = comparisonTargetExpression(group);
+  const targetSection = target && comparisonSectionForExpression(group, target.id);
+  if (followTarget && targetSection) state.comparisonSectionId = targetSection.id;
+  if (!sections.some((section) => section.id === state.comparisonSectionId)) state.comparisonSectionId = sections[0]?.id || "";
+  const active = sections.find((section) => section.id === state.comparisonSectionId);
+  const targetLabel = target ? `本题重点：${target.pattern}${targetSection ? ` · ${targetSection.title}` : ""}` : "切换细分意思，比较相近表达的真实使用场景。";
+  $("comparisonLead").textContent = targetLabel;
+  $("comparisonTabs").innerHTML = sections.map((section) => {
+    const selected = section.id === active?.id;
+    return `<button class="comparison-tab${selected ? " active" : ""}" type="button" role="tab" aria-selected="${selected}" data-comparison-section="${escapeAttr(section.id)}">${escapeHtml(section.title)}<small>${section.expressionIds.length}</small></button>`;
+  }).join("");
+  $("comparisonTabs").querySelectorAll("[data-comparison-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.comparisonSectionId = button.dataset.comparisonSection;
+      renderComparisonMatrix();
+    });
+  });
+  $("addComparisonExpressionBtn").disabled = !active;
+  $("editComparisonSectionBtn").disabled = Boolean(active?._systemSection);
+  $("editComparisonSectionBtn").textContent = active?._customSection ? "✎ 编辑小类" : "✎ 新建小类";
+  $("editComparisonSectionBtn").title = active?._systemSection
+    ? "“新增／未归类补充”由系统维护；请切换到其他小类后新建。"
+    : active?._customSection ? "修改当前自定义辨析小类的标题和说明" : "新建一个自定义辨析小类";
+  if (!active) {
+    $("comparisonMatrix").innerHTML = `<p class="empty-state">当前分类暂时没有可显示的辨析条目。</p>`;
+    return;
+  }
+  const allItems = new Map(group.expressions.map((item) => [item.id, item]));
+  const items = active.expressionIds.map((id) => allItems.get(id)).filter(Boolean)
+    .filter((item) => state.level === "all" || levelMatches(item.level));
+  const hiddenCount = active.expressionIds.length - items.length;
+  $("comparisonMatrix").innerHTML = `
+    <div class="comparison-section-summary">
+      <strong>${escapeHtml(active.title)}</strong>
+      <p>${escapeHtml(active.summary)}</p>
+      ${hiddenCount ? `<small>等级筛选暂时隐藏 ${hiddenCount} 条；点击表内词条会自动显示全部等级并定位知识卡。</small>` : ""}
+    </div>
+    ${items.length ? `<div class="comparison-table-wrap"><table class="comparison-table">
+      <thead><tr><th scope="col">表达</th><th scope="col">核心意思／区别</th><th scope="col">接续</th><th scope="col">倾向・文体・正式程度</th><th scope="col">适合场景／不可或慎用</th></tr></thead>
+      <tbody>${items.map((item) => renderComparisonRow(item)).join("")}</tbody>
+    </table></div>` : `<p class="empty-state">当前等级筛选下没有该板块的条目。切换“全部 N5-N1”可查看完整辨析。</p>`}
+  `;
+  $("comparisonMatrix").querySelectorAll("[data-comparison-expression]").forEach((button) => {
+    button.addEventListener("click", () => focusComparisonExpression(button.dataset.comparisonExpression));
+  });
+  $("comparisonMatrix").querySelectorAll("[data-comparison-edit]").forEach((button) => {
+    button.addEventListener("click", () => openComparisonProfileEditor(button.dataset.comparisonEdit));
+  });
+}
+
+function renderComparisonRow(item) {
+  const profile = comparisonProfileFor(item);
+  const formal = usageProfile(item).formality;
+  return `<tr>
+    <th scope="row" data-label="表达"><div class="comparison-expression-actions"><button class="comparison-expression-btn" type="button" data-comparison-expression="${escapeAttr(item.id)}"><span lang="ja">${renderJapaneseText(item.pattern)}</span><small>${escapeHtml(item.level)}</small></button><button class="comparison-row-edit" type="button" data-comparison-edit="${escapeAttr(item.id)}" title="修改这条辨析说明">✎</button></div></th>
+    <td data-label="核心意思／区别"><strong>${escapeHtml(item.meaning || "—")}</strong><p>${escapeHtml(profile.coreDifference)}</p></td>
+    <td data-label="接续" class="comparison-connection" lang="ja">${renderComparisonConnection(item.connection)}</td>
+    <td data-label="倾向・文体・正式程度"><div class="comparison-tone">${renderUsageBadges(item.usageFlags)}<span>${escapeHtml(profile.polarity)}</span><span>${escapeHtml(profile.register || formal)}</span><small>${escapeHtml(formal)}</small></div></td>
+    <td data-label="适合场景／不可或慎用" class="comparison-scenes"><p><b>适合：</b>${escapeHtml(profile.usageScene)}</p><p><b>限制：</b>${escapeHtml(profile.avoidScene)}</p></td>
+  </tr>`;
+}
+
+function renderComparisonConnection(connection) {
+  return parseConnectionRows(connection).map((row) => {
+    const note = row.note ? `（${row.note}）` : "";
+    return `${row.scope}：${row.form}${note}`;
+  }).join("；");
+}
+
+function focusComparisonExpression(expressionId) {
+  const group = currentGroup();
+  const item = group.expressions.find((candidate) => candidate.id === expressionId);
+  if (!item) return;
+  const wasFiltered = state.level !== "all" && !levelMatches(item.level);
+  if (state.level !== "all") {
+    state.level = "all";
+    $("levelFilter").value = "all";
+    renderGroup();
+    renderGroupList();
+  }
+  $("comparisonLead").textContent = `${wasFiltered ? "已暂时切换为全部等级并定位知识卡：" : "已定位知识卡："}${item.pattern}`;
+  focusExpression(expressionId);
 }
 
 function answerKey() {
@@ -835,11 +1203,90 @@ function markHard() {
   showFeedback(true);
 }
 
-function openExpressionEditor(mode, item = null) {
+function customComparisonSections(groupId) {
+  state.custom.comparison.sections[groupId] ||= {};
+  return state.custom.comparison.sections[groupId];
+}
+
+function assignExpressionToComparisonSection(groupId, expressionId, sectionId) {
+  if (!sectionId || sectionId === "custom-supplement") return;
+  const section = comparisonSectionsForGroup(currentGroup()).find((entry) => entry.id === sectionId);
+  if (!section) return;
+  state.custom.comparison.memberships[expressionId] = sectionId;
+  if (section._customSection) {
+    const custom = customComparisonSections(groupId);
+    custom[sectionId] = { ...custom[sectionId], expressionIds: [...new Set([...(custom[sectionId].expressionIds || []), expressionId])] };
+  }
+}
+
+function comparisonProfileFields(profile) {
+  return `
+    ${textareaField("coreDifference", "核心意思／与同类的区别", profile.coreDifference || "")}
+    ${textareaField("usageScene", "一般／适合使用场景", profile.usageScene || "")}
+    ${textareaField("avoidScene", "不可或慎用场景", profile.avoidScene || "")}
+    <div class="form-grid">
+      ${inputField("polarity", "积极／消极倾向", profile.polarity || "中性（看语境）")}
+      ${inputField("register", "文体／正式程度", profile.register || "普通・中性")}
+    </div>`;
+}
+
+function openComparisonProfileEditor(expressionId) {
+  const group = currentGroup();
+  const item = group.expressions.find((candidate) => candidate.id === expressionId);
+  if (!item) return;
+  const profile = comparisonProfileFor(item);
+  openDialog(`
+    <form id="comparisonProfileForm" class="editor-form">
+      <header><h3>修改辨析说明</h3><button class="icon-btn" type="button" data-close-dialog title="关闭" aria-label="关闭">×</button></header>
+      <p class="modal-kicker"><span lang="ja">${renderJapaneseText(item.pattern)}</span> · ${escapeHtml(item.meaning)}</p>
+      <p class="editor-help">这里仅修改本机“辨析矩阵”的说明，不会改动知识卡正文、接续或例句。</p>
+      ${comparisonProfileFields(profile)}
+      <footer><button class="secondary-btn" type="button" data-close-dialog>取消</button><button class="primary-btn" type="submit">保存辨析</button></footer>
+    </form>`);
+  $("comparisonProfileForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    state.custom.comparison.profiles[expressionId] = Object.fromEntries(["coreDifference", "usageScene", "avoidScene", "polarity", "register"].map((key) => [key, String(form.get(key) || "").trim()]));
+    saveCustomContent();
+    closeDialog();
+    renderComparisonMatrix();
+  });
+}
+
+function openComparisonSectionEditor() {
+  const group = currentGroup();
+  const current = activeComparisonSection();
+  const isNew = !current || !current._customSection;
+  const data = isNew ? { title: "", summary: "", expressionIds: [] } : current;
+  openDialog(`
+    <form id="comparisonSectionForm" class="editor-form">
+      <header><h3>${isNew ? "新建辨析小类" : "修改辨析小类"}</h3><button class="icon-btn" type="button" data-close-dialog title="关闭" aria-label="关闭">×</button></header>
+      <p class="editor-help">新建后，点击“添加表达”即可把新条目直接放进这个小类。内置词条仍保持原有分类，避免误改已校订内容。</p>
+      ${inputField("title", "小类标题", data.title)}
+      ${textareaField("summary", "这一小类的辨析重点", data.summary)}
+      <footer><button class="secondary-btn" type="button" data-close-dialog>取消</button><button class="primary-btn" type="submit">保存小类</button></footer>
+    </form>`);
+  $("comparisonSectionForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get("title") || "").trim();
+    const summary = String(form.get("summary") || "").trim();
+    if (!title || !summary) { alert("请填写小类标题和辨析重点。\n"); return; }
+    const id = isNew ? `custom-section-${Date.now()}` : current.id;
+    customComparisonSections(group.id)[id] = { id, title, summary, expressionIds: data.expressionIds || [], _customSection: true };
+    state.comparisonSectionId = id;
+    saveCustomContent();
+    closeDialog();
+    renderComparisonMatrix();
+  });
+}
+
+function openExpressionEditor(mode, item = null, options = {}) {
   const group = currentGroup();
   const data = item || {
     level: "N3",
     pattern: "",
+    variants: [],
     meaning: "",
     connection: "",
     collocation: "",
@@ -861,9 +1308,10 @@ function openExpressionEditor(mode, item = null) {
       <div class="form-grid">
         ${inputField("level", "等级", data.level)}
         ${inputField("pattern", "文型", data.pattern)}
+        ${inputField("variants", "表达变体（逗号分隔）", (data.variants || []).join("，"))}
         ${inputField("meaning", "意思", data.meaning)}
-        ${inputField("connection", "接续", data.connection)}
       </div>
+      ${textareaField("connection", "接续（用；分隔多条规则，保存后显示为表格）", data.connection)}
       ${textareaField("collocation", "固定搭配", data.collocation || "")}
       ${textareaField("nuance", "语感 / 使用限制", data.nuance)}
       ${textareaField("example", "例句", data.example)}
@@ -894,6 +1342,7 @@ function openExpressionEditor(mode, item = null) {
       const addition = { id, ...payload, source: "我添加的", _userAdded: true };
       state.custom.additions[group.id] ||= [];
       state.custom.additions[group.id].push(addition);
+      assignExpressionToComparisonSection(group.id, id, options.comparisonSectionId);
       if (payload.userNote) state.custom.notes[id] = payload.userNote;
     } else {
       state.custom.edits[item.id] = payload;
@@ -941,9 +1390,11 @@ function openNoteEditor(item) {
 
 function expressionPayloadFromForm(form) {
   const tags = String(form.get("tags") || "").split(/[，,]/).map((tag) => tag.trim()).filter(Boolean);
+  const variants = String(form.get("variants") || "").split(/[，,]/).map((value) => value.trim()).filter(Boolean);
   return {
     level: String(form.get("level") || "").trim(),
     pattern: String(form.get("pattern") || "").trim(),
+    variants,
     meaning: String(form.get("meaning") || "").trim(),
     connection: String(form.get("connection") || "").trim(),
     collocation: String(form.get("collocation") || "").trim(),
