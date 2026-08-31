@@ -99,6 +99,16 @@
 - 新增语法条目或修改知识卡片时，可分别勾选四类徽章；设置会保存在浏览器本机的 `jp-grammar-custom-content-v1` 中。
 - 使用页面的“备份”可导出学习进度、笔记、自定义条目和徽章设置；“恢复备份”支持导入 v1 与 v2 备份 JSON。自定义内容只保存在当前浏览器，清除浏览器数据前请先备份。
 
+## 本地部署 / Release 离线包
+
+下载 [最新离线部署包（ZIP）](https://github.com/lyyrebecca/beka-japanese-grammar/releases/latest/download/beka-japanese-grammar-offline.zip)，解压后可直接打开 `index.html` 使用；如需通过本地 HTTP 服务访问，在解压目录运行：
+
+```sh
+python3 -m http.server 8080
+```
+
+再访问 <http://localhost:8080>。该 ZIP 只包含运行网站所需的公开静态文件、截图和部署说明，**不包含** `.git`、`.openai`、`dist`、脚本、OCR／书籍资料、输出目录、浏览器学习记录、备份或其他本机文件。
+
 ## 在线访问
 
 直接访问：<https://lyyrebecca.github.io/beka-japanese-grammar/>
