@@ -3,6 +3,7 @@
     "build": "node scripts/build-site.mjs",
     "audit:conjugation": "node scripts/audit-conjugation-data.mjs",
     "audit:search": "node scripts/audit-search-ranking.mjs",
+    "generate:search-readings": "python3 scripts/generate-grammar-search-readings.py",
     "audit:grammar": "node scripts/audit-grammar-consolidation.mjs",
     "audit:connection-tables": "node scripts/audit-connection-tables.mjs",
     "migrate:backup": "node scripts/migrate-grammar-backup.mjs",

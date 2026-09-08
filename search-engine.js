@@ -84,18 +84,48 @@
 
   function patternVariants(value) {
     const raw = String(value || "");
-    const variants = raw.split(PATTERN_SEPARATORS).flatMap((part) => [
-      compact(part),
-      compact(part.replace(/[（(【\[].*?[）)】\]]/g, ""))
-    ]);
+    const withoutParenthetical = raw.replace(/[（(【\[].*?[）)】\]]/g, "");
+    // Keep the complete labelled form for sense-specific searches, but remove
+    // parenthetical notes before splitting.  A separator inside
+    // 「ばかり（数量/程度）」 must never create fake forms such as
+    // 「ばかり数量」 or the standalone label 「程度」.
+    const variants = [compact(raw), ...withoutParenthetical.split(PATTERN_SEPARATORS).map(compact)];
     return [...new Set(variants.filter(Boolean))];
   }
 
-  function textVariants(value) {
+  function registeredReadings(itemId, value) {
+    return asList(global.GRAMMAR_SEARCH_READINGS?.[itemId]?.[compact(value)]).map(compact).filter(Boolean);
+  }
+
+  function queryReadings(value) {
+    return asList(global.GRAMMAR_QUERY_READINGS?.[compact(value)]).map(compact).filter(Boolean);
+  }
+
+  function textVariants(value, itemId = "") {
     const normalized = compact(value);
     const kana = compact(normalizeKana(value));
     const romaji = compact(kanaToRomaji(kana));
-    return [...new Set([normalized, kana, romaji].filter(Boolean))];
+    const readings = registeredReadings(itemId, value);
+    return [...new Set([
+      normalized,
+      kana,
+      romaji,
+      ...readings,
+      ...readings.map((reading) => compact(kanaToRomaji(reading)))
+    ].filter(Boolean))];
+  }
+
+  function querySearchValues(value) {
+    const normalized = compact(value);
+    const kana = compact(normalizeKana(value));
+    const readings = queryReadings(value);
+    return [...new Set([
+      normalized,
+      kana,
+      compact(kanaToRomaji(kana)),
+      ...readings,
+      ...readings.map((reading) => compact(kanaToRomaji(reading)))
+    ].filter(Boolean))];
   }
 
   function hasChineseSemanticIntent(query) {
@@ -132,7 +162,8 @@
     return sourceForms.flatMap(({ value, kind }) => patternVariants(value).map((pattern) => ({
       value: pattern,
       kind,
-      searchValues: textVariants(pattern)
+      readings: registeredReadings(item.id, pattern),
+      searchValues: textVariants(pattern, item.id)
     }))).filter((entry) => {
       // Keep the canonical pattern ahead of an identical entry in variants.
       const key = compact(entry.value);
@@ -146,7 +177,8 @@
     const seen = new Set();
     return asList(item.searchAliases).flatMap(patternVariants).map((alias) => ({
       value: alias,
-      searchValues: textVariants(alias)
+      readings: registeredReadings(item.id, alias),
+      searchValues: textVariants(alias, item.id)
     })).filter((entry) => {
       const key = compact(entry.value);
       if (seen.has(key)) return false;
@@ -175,6 +207,7 @@
   function exactFormMatch(forms, rawQuery) {
     const query = compact(rawQuery);
     if (!query) return null;
+    const queryValues = querySearchValues(rawQuery);
     for (const form of forms) {
       const direct = compact(form.value);
       if (query === direct) return { ...form, matchedBy: form.kind };
@@ -182,6 +215,13 @@
       if (query === kana) return { ...form, matchedBy: `${form.kind}-kana` };
       const romaji = compact(kanaToRomaji(normalizeKana(form.value)));
       if (romaji && romaji !== direct && query === romaji) return { ...form, matchedBy: `${form.kind}-romaji` };
+      if ((form.readings || []).includes(query)) return { ...form, matchedBy: `${form.kind}-kana` };
+      if ((form.readings || []).some((reading) => compact(kanaToRomaji(reading)) === query)) {
+        return { ...form, matchedBy: `${form.kind}-romaji` };
+      }
+      if (queryValues.some((value) => form.searchValues?.includes(value))) {
+        return { ...form, matchedBy: `${form.kind}-orthography` };
+      }
     }
     return null;
   }
@@ -192,6 +232,7 @@
     const label = match.kind === "variant" ? "表达变体" : "句式";
     if (match.matchedBy.endsWith("-romaji")) return `${label}罗马音命中：${match.value}`;
     if (match.matchedBy.endsWith("-kana")) return `${label}假名对应：${match.value}`;
+    if (match.matchedBy.endsWith("-orthography")) return `${label}汉字/假名对应：${match.value}`;
     return match.kind === "variant" ? `表达变体完全一致：${match.value}` : "句式完全一致";
   }
 
@@ -345,5 +386,13 @@
     return { query: rawQuery, normalizedQuery, counts, ...limited, best: limited.exact[0] || limited.strong[0] || limited.semantic[0] || limited.structural[0] || null };
   }
 
-  global.GrammarSearch = { rank, compact, normalizeKana, kanaToRomaji, patternVariants, MAX_RESULTS_PER_TIER };
+  function readingForms(item) {
+    return expressionForms(item).flatMap((form) => (form.readings || []).map((reading) => ({
+      form: form.value,
+      reading,
+      romaji: compact(kanaToRomaji(reading))
+    })));
+  }
+
+  global.GrammarSearch = { rank, compact, normalizeKana, kanaToRomaji, patternVariants, readingForms, MAX_RESULTS_PER_TIER };
 }(window));

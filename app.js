@@ -3,14 +3,16 @@ const THEME_KEY = "jp-grammar-quest-theme-v1";
 const CUSTOM_CONTENT_KEY = "jp-grammar-custom-content-v1";
 const LAYOUT_KEY = "jp-grammar-panel-layout-v1";
 
-const EMPTY_PROGRESS = { completed: {}, hard: {}, answers: {}, lastGroup: "" };
-const EMPTY_CUSTOM = { edits: {}, notes: {}, additions: {}, deleted: {}, preferences: {}, comparison: { sections: {}, profiles: {}, memberships: {} }, schemaVersion: 3 };
+const EMPTY_SEARCH_STATS = { total: 0, items: {} };
+const EMPTY_PROGRESS = { completed: {}, hard: {}, answers: {}, lastGroup: "", searchStats: EMPTY_SEARCH_STATS };
+const EMPTY_CUSTOM = { edits: {}, notes: {}, additions: {}, deleted: {}, preferences: {}, supplementQueue: {}, comparison: { sections: {}, profiles: {}, memberships: {} }, schemaVersion: 3 };
 
 const state = {
   groupId: "",
   challengeIndex: 0,
   query: loadInitialSearchQuery(),
   searchResultKey: "",
+  searchCountedForQuery: "",
   level: "all",
   expandedGroups: {},
   comparisonSectionId: "",
@@ -44,8 +46,16 @@ function bindEvents() {
   $("searchInput").addEventListener("input", (event) => {
     state.query = event.target.value.trim().toLowerCase();
     state.searchResultKey = "";
+    state.searchCountedForQuery = "";
     render();
   });
+  $("searchInput").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitCurrentSearch("", true);
+  });
+  $("searchCommitBtn").addEventListener("click", () => commitCurrentSearch("", true));
+  $("supplementQueueBtn").addEventListener("click", openSupplementQueueEditor);
   $("levelFilter").addEventListener("change", (event) => {
     state.level = event.target.value;
     state.challengeIndex = 0;
@@ -68,12 +78,12 @@ function bindEvents() {
   $("importBackupBtn").addEventListener("click", importBackup);
   $("resetProgressBtn").addEventListener("click", () => {
     if (!confirm("确定清空本机练习记录吗？新增条目、修改和笔记不会被删除。")) return;
-    state.progress = { ...EMPTY_PROGRESS, lastGroup: state.groupId };
+    state.progress = normalizeProgress({ lastGroup: state.groupId });
     saveProgress();
     render();
   });
   $("resetCustomBtn").addEventListener("click", () => {
-    if (!confirm("确定清空本机新增条目、卡片修改和笔记吗？练习进度不会被删除。")) return;
+    if (!confirm("确定清空本机新增条目、卡片修改、笔记和待补充清单吗？练习进度不会被删除。")) return;
     state.custom = structuredClone(EMPTY_CUSTOM);
     saveCustomContent();
     render();
@@ -194,9 +204,25 @@ function bindPanelResizers() {
   });
 }
 
+function normalizeProgress(raw = {}) {
+  return {
+    ...structuredClone(EMPTY_PROGRESS),
+    ...(raw || {}),
+    completed: { ...(raw.completed || {}) },
+    hard: { ...(raw.hard || {}) },
+    answers: { ...(raw.answers || {}) },
+    searchStats: {
+      ...EMPTY_SEARCH_STATS,
+      ...(raw.searchStats || {}),
+      items: { ...(raw.searchStats?.items || {}) }
+    }
+  };
+}
+
 function loadProgress() {
   try {
-    return { ...EMPTY_PROGRESS, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}) };
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    return normalizeProgress(saved);
   } catch {
     return structuredClone(EMPTY_PROGRESS);
   }
@@ -248,8 +274,8 @@ function importBackup() {
       if (backup.app !== "beka-japanese-grammar" || ![1, 2, 3].includes(backup.version)) {
         throw new Error("invalid backup");
       }
-      if (!confirm("导入会覆盖当前浏览器中的学习记录、笔记和自定义条目，确定继续吗？")) return;
-      state.progress = { ...EMPTY_PROGRESS, ...(backup.progress || {}) };
+      if (!confirm("导入会覆盖当前浏览器中的学习记录、笔记、自定义条目和待补充清单，确定继续吗？")) return;
+      state.progress = normalizeProgress(backup.progress || {});
       state.custom = migrateCustomContent(backup.custom || {});
       if (backup.theme === "day" || backup.theme === "night") state.theme = backup.theme;
       saveProgress();
@@ -323,6 +349,7 @@ function migrateCustomContent(raw = {}) {
   custom.additions ||= {};
   custom.deleted ||= {};
   custom.preferences ||= {};
+  custom.supplementQueue ||= {};
   custom.comparison ||= {};
   custom.comparison.sections ||= {};
   custom.comparison.profiles ||= {};
@@ -407,13 +434,17 @@ function currentChallenge() {
 }
 
 function render() {
+  renderFrequentSearchPanel();
+  renderSupplementQueueCount();
   if (state.query) {
     const results = GrammarSearch.rank(mergedGroups(), state.query, { level: state.level });
+    renderMissingSearchPrompt(results);
     setSearchMode(true);
     renderSearchResults(results);
     renderSearchGroupList(results);
     return;
   }
+  renderMissingSearchPrompt(null);
   setSearchMode(false);
   const visibleGroups = renderGroupList();
   if (!visibleGroups.some((group) => group.id === state.groupId) && visibleGroups.length) {
@@ -424,6 +455,325 @@ function render() {
   }
   renderGroup();
   renderGroupList();
+}
+
+function supplementQueueEntries() {
+  return Object.entries(state.custom.supplementQueue || {})
+    .map(([key, item]) => ({ key, ...item }))
+    .filter((item) => item.query)
+    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")) || String(a.query).localeCompare(String(b.query), "ja"));
+}
+
+function supplementQueueKey(query) {
+  return GrammarSearch.compact(String(query || ""));
+}
+
+function supplementQueueItem(query) {
+  return state.custom.supplementQueue?.[supplementQueueKey(query)] || null;
+}
+
+function renderSupplementQueueCount() {
+  const count = supplementQueueEntries().length;
+  const badge = $("supplementQueueCount");
+  if (badge) badge.textContent = String(count);
+  const button = $("supplementQueueBtn");
+  if (button) button.title = `查看、添加或修改待补充知识清单（${count} 条）`;
+}
+
+function renderMissingSearchPrompt(results) {
+  const prompt = $("missingSearchPrompt");
+  if (!prompt) return;
+  const query = String(state.query || "").trim();
+  const key = supplementQueueKey(query);
+  const hasUsableResult = (ranked) => Boolean(ranked) && Number(ranked.counts.exact || 0) + Number(ranked.counts.strong || 0) + Number(ranked.counts.semantic || 0) > 0;
+  const hasUnfilteredResult = hasUsableResult(results) || (Boolean(query) && state.level !== "all" && hasUsableResult(GrammarSearch.rank(mergedGroups(), query, { level: "all" })));
+  if (!key || !results || hasUnfilteredResult) {
+    prompt.classList.add("hidden");
+    prompt.innerHTML = "";
+    return;
+  }
+  const existing = supplementQueueItem(query);
+  const onlyStructural = Number(results.counts.structural || 0) > 0;
+  prompt.classList.remove("hidden");
+  prompt.innerHTML = existing
+    ? `<p>这个检索词已在待补充清单中。</p><button class="ghost-btn compact-action" type="button" data-open-supplement-queue>打开清单</button>`
+    : `<p>${onlyStructural ? "未找到直接或语义相关的词条；下方仅有构造参考。" : "词库中没有找到任何可用结果。"}</p><button class="secondary-btn compact-action" type="button" data-add-missing-query>添加到待补充知识清单</button>`;
+  prompt.querySelector("[data-add-missing-query]")?.addEventListener("click", () => addSupplementQueueItem(query));
+  prompt.querySelector("[data-open-supplement-queue]")?.addEventListener("click", openSupplementQueueEditor);
+}
+
+function addSupplementQueueItem(query, note = "") {
+  const cleanedQuery = String(query || "").trim();
+  const key = supplementQueueKey(cleanedQuery);
+  if (!key) return false;
+  state.custom.supplementQueue ||= {};
+  const now = new Date().toISOString();
+  const previous = state.custom.supplementQueue[key] || {};
+  state.custom.supplementQueue[key] = {
+    query: cleanedQuery,
+    note: String(note || previous.note || "").trim(),
+    createdAt: previous.createdAt || now,
+    updatedAt: now,
+    addedCount: Number(previous.addedCount || 0) + 1
+  };
+  saveCustomContent();
+  renderSupplementQueueCount();
+  if (state.query) {
+    const results = GrammarSearch.rank(mergedGroups(), state.query, { level: state.level });
+    renderMissingSearchPrompt(results);
+  }
+  return true;
+}
+
+function formatSupplementDate(value) {
+  if (!value) return "时间未记录";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未记录";
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+}
+
+function updateSupplementQueueItem(oldKey, query, note) {
+  const previous = state.custom.supplementQueue?.[oldKey];
+  const cleanedQuery = String(query || "").trim();
+  const newKey = supplementQueueKey(cleanedQuery);
+  if (!previous || !newKey) return false;
+  const duplicate = state.custom.supplementQueue[newKey];
+  if (newKey !== oldKey) delete state.custom.supplementQueue[oldKey];
+  state.custom.supplementQueue[newKey] = {
+    query: cleanedQuery,
+    note: String(note || "").trim(),
+    createdAt: duplicate?.createdAt || previous.createdAt,
+    updatedAt: new Date().toISOString(),
+    addedCount: Math.max(1, Number(previous.addedCount || 1) + (newKey !== oldKey ? Number(duplicate?.addedCount || 0) : 0))
+  };
+  saveCustomContent();
+  renderSupplementQueueCount();
+  return true;
+}
+
+function deleteSupplementQueueItem(key) {
+  if (!state.custom.supplementQueue?.[key]) return;
+  if (!confirm("确定从待补充知识清单中删除这一项吗？")) return;
+  delete state.custom.supplementQueue[key];
+  saveCustomContent();
+  renderSupplementQueueCount();
+  openSupplementQueueEditor();
+}
+
+function supplementExpressionDraft(item) {
+  return {
+    level: "N3",
+    pattern: item.query,
+    variants: [],
+    searchAliases: [],
+    meaning: "",
+    connection: "",
+    collocation: "",
+    nuance: "",
+    example: "",
+    translation: "",
+    sourceBook: "待补充知识清单",
+    sourceLesson: "待查证整理",
+    tags: [currentGroup()?.theme].filter(Boolean),
+    usageFlags: {},
+    userNote: item.note || ""
+  };
+}
+
+function openSupplementQueueEditor() {
+  const entries = supplementQueueEntries();
+  openDialog(`
+    <div class="editor-form supplement-queue-editor">
+      <header><div><p class="eyebrow">本机自动保存</p><h3>待补充知识清单</h3></div><button class="icon-btn" type="button" data-close-dialog title="关闭" aria-label="关闭">×</button></header>
+      <p class="editor-help">没有任何检索结果时可一键收集，也可在这里手动添加、修改备注、重新检索或整理为新知识卡。清单会随网站备份一起导出。</p>
+      <form id="supplementQueueAddForm" class="supplement-queue-add">
+        ${inputField("query", "手动添加检索词 / 文型", "")}
+        ${textareaField("note", "备注（可选）", "")}
+        <button class="secondary-btn" type="submit">＋ 添加到清单</button>
+      </form>
+      <div class="supplement-queue-summary"><strong>${entries.length} 条待补充</strong><span>按最后修改时间排序</span></div>
+      <div class="supplement-queue-list">
+        ${entries.length ? entries.map((item, index) => `
+          <form class="supplement-queue-row" data-supplement-key="${escapeAttr(item.key)}">
+            <div class="supplement-row-head"><strong>${index + 1}</strong><span>收集 ${item.addedCount || 1} 次 · ${escapeHtml(formatSupplementDate(item.updatedAt || item.createdAt))}</span></div>
+            ${inputField("query", "检索词 / 文型", item.query)}
+            ${textareaField("note", "待查证要点 / 备注", item.note || "")}
+            <div class="supplement-row-actions">
+              <button class="primary-btn compact-action" type="submit">保存修改</button>
+              <button class="ghost-btn compact-action" type="button" data-supplement-search="${escapeAttr(item.key)}">重新检索</button>
+              <button class="secondary-btn compact-action" type="button" data-supplement-convert="${escapeAttr(item.key)}">整理为当前分类新条目</button>
+              <button class="text-btn supplement-delete" type="button" data-supplement-delete="${escapeAttr(item.key)}">删除</button>
+            </div>
+          </form>`).join("") : `<p class="empty-state">清单还是空的。可在上方手动添加，或先去检索一个词条。</p>`}
+      </div>
+    </div>`);
+  $("supplementQueueAddForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const query = String(form.get("query") || "").trim();
+    if (!query) { alert("请填写要收集的检索词或文型。"); return; }
+    addSupplementQueueItem(query, String(form.get("note") || ""));
+    openSupplementQueueEditor();
+  });
+  document.querySelectorAll(".supplement-queue-row").forEach((formElement) => {
+    formElement.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const query = String(form.get("query") || "").trim();
+      if (!query) { alert("检索词或文型不能为空。"); return; }
+      updateSupplementQueueItem(event.currentTarget.dataset.supplementKey, query, String(form.get("note") || ""));
+      openSupplementQueueEditor();
+    });
+  });
+  document.querySelectorAll("[data-supplement-search]").forEach((button) => button.addEventListener("click", () => {
+    const item = state.custom.supplementQueue[button.dataset.supplementSearch];
+    if (!item) return;
+    state.query = item.query.toLowerCase();
+    state.searchResultKey = "";
+    state.searchCountedForQuery = "";
+    $("searchInput").value = item.query;
+    closeDialog();
+    render();
+    $("searchInput").focus();
+  }));
+  document.querySelectorAll("[data-supplement-convert]").forEach((button) => button.addEventListener("click", () => {
+    const key = button.dataset.supplementConvert;
+    const item = state.custom.supplementQueue[key];
+    if (!item) return;
+    closeDialog();
+    openExpressionEditor("add", supplementExpressionDraft(item), { supplementQueueKey: key });
+  }));
+  document.querySelectorAll("[data-supplement-delete]").forEach((button) => button.addEventListener("click", () => deleteSupplementQueueItem(button.dataset.supplementDelete)));
+}
+
+function commitCurrentSearch(preferredKey = "", countRepeatedSubmission = false) {
+  const query = String(state.query || "").trim();
+  const normalizedQuery = GrammarSearch.compact(query);
+  if (!normalizedQuery || (!countRepeatedSubmission && state.searchCountedForQuery === normalizedQuery)) return;
+  const results = GrammarSearch.rank(mergedGroups(), query, { level: state.level });
+  const resultPool = [results.exact, results.strong, results.semantic, results.structural].flat();
+  const result = resultPool.find((entry) => entry.key === preferredKey) || results.best;
+  if (!result) return;
+
+  const stats = state.progress.searchStats ||= structuredClone(EMPTY_SEARCH_STATS);
+  stats.items ||= {};
+  const previous = stats.items[result.key] || {};
+  const queryStats = { ...(previous.queries || {}) };
+  const previousQuery = queryStats[normalizedQuery] || {};
+  queryStats[normalizedQuery] = {
+    label: query,
+    count: Number(previousQuery.count || 0) + 1
+  };
+  stats.items[result.key] = {
+    key: result.key,
+    groupId: result.groupId,
+    groupTitle: result.groupTitle,
+    itemId: result.item.id,
+    pattern: result.item.pattern,
+    count: Number(previous.count || 0) + 1,
+    lastSearchedAt: new Date().toISOString(),
+    queries: queryStats
+  };
+  stats.total = Number(stats.total || 0) + 1;
+  state.searchCountedForQuery = normalizedQuery;
+  saveProgress();
+  renderFrequentSearchPanel();
+  refreshSearchUsageBadges();
+}
+
+function searchUsageEntry(key) {
+  return state.progress.searchStats?.items?.[key] || null;
+}
+
+function renderSearchUsage(key) {
+  const entry = searchUsageEntry(key);
+  const count = Number(entry?.count || 0);
+  const commonQueries = Object.values(entry?.queries || {})
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+    .slice(0, 3)
+    .map((item) => `${item.label} ×${item.count}`)
+    .join("；");
+  const title = commonQueries ? `常用检索：${commonQueries}` : "尚未检索过这张卡";
+  return `<span class="entry-search-count" data-search-count-key="${escapeAttr(key)}" title="${escapeAttr(title)}">检索 ${count} 次</span>`;
+}
+
+function refreshSearchUsageBadges() {
+  document.querySelectorAll("[data-search-count-key]").forEach((badge) => {
+    const entry = searchUsageEntry(badge.dataset.searchCountKey);
+    const count = Number(entry?.count || 0);
+    badge.textContent = `检索 ${count} 次`;
+    const commonQueries = Object.values(entry?.queries || {})
+      .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+      .slice(0, 3)
+      .map((item) => `${item.label} ×${item.count}`)
+      .join("；");
+    badge.title = commonQueries ? `常用检索：${commonQueries}` : "尚未检索过这张卡";
+  });
+}
+
+function renderFrequentSearchPanel() {
+  const panel = $("frequentSearchPanel");
+  if (!panel) return;
+  const stats = state.progress.searchStats || EMPTY_SEARCH_STATS;
+  const items = Object.values(stats.items || {})
+    .filter((item) => Number(item.count || 0) > 0)
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0) || String(b.lastSearchedAt || "").localeCompare(String(a.lastSearchedAt || "")));
+  const groupMap = new Map();
+  items.forEach((item) => {
+    const previous = groupMap.get(item.groupId) || { groupId: item.groupId, groupTitle: item.groupTitle, count: 0 };
+    previous.count += Number(item.count || 0);
+    groupMap.set(item.groupId, previous);
+  });
+  const groups = [...groupMap.values()].sort((a, b) => b.count - a.count || String(a.groupTitle).localeCompare(String(b.groupTitle), "zh-CN"));
+  panel.innerHTML = `
+    <div class="frequent-search-head">
+      <div><p class="eyebrow">复习统计</p><strong>经常检索</strong></div>
+      <span>${Number(stats.total || 0)} 次</span>
+    </div>
+    ${items.length ? `
+      <details open>
+        <summary>小条目排行 <em>${items.length}</em></summary>
+        <ol class="frequent-list">${items.slice(0, 10).map((item) => `
+          <li><button type="button" data-frequent-item="${escapeAttr(item.key)}"><span lang="ja">${renderJapaneseText(item.pattern)}</span><em>${item.count}</em></button></li>
+        `).join("")}</ol>
+      </details>
+      <details>
+        <summary>大类统计 <em>${groups.length}</em></summary>
+        <ol class="frequent-list frequent-list--groups">${groups.map((group) => `
+          <li><button type="button" data-frequent-group="${escapeAttr(group.groupId)}"><span>${escapeHtml(group.groupTitle)}</span><em>${group.count}</em></button></li>
+        `).join("")}</ol>
+      </details>
+    ` : `<p class="frequent-empty">检索并打开词条后，这里会按次数从高到低生成复习清单。</p>`}
+  `;
+  panel.querySelectorAll("[data-frequent-item]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const item = searchUsageEntry(button.dataset.frequentItem);
+      if (!item) return;
+      state.query = "";
+      state.searchResultKey = "";
+      state.searchCountedForQuery = "";
+      $("searchInput").value = "";
+      state.groupId = item.groupId;
+      state.expandedGroups[item.groupId] = true;
+      state.progress.lastGroup = item.groupId;
+      saveProgress();
+      render();
+      setTimeout(() => focusExpression(item.itemId), 100);
+    });
+  });
+  panel.querySelectorAll("[data-frequent-group]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.query = "";
+      state.searchResultKey = "";
+      state.searchCountedForQuery = "";
+      $("searchInput").value = "";
+      state.groupId = button.dataset.frequentGroup;
+      state.expandedGroups[state.groupId] = true;
+      state.progress.lastGroup = state.groupId;
+      saveProgress();
+      render();
+    });
+  });
 }
 
 function setSearchMode(active) {
@@ -577,7 +927,7 @@ function renderSearchResultCard(result, open) {
     <details class="search-result-card" data-search-result="${escapeAttr(result.key)}" ${open ? "open" : ""}>
       <summary>
         <span class="search-result-main">
-          <span class="search-result-meta"><span class="level">${escapeHtml(item.level)}</span>${renderUsageBadges(item.usageFlags)}<small>${escapeHtml(result.groupTitle)}</small></span>
+          <span class="search-result-meta"><span class="level">${escapeHtml(item.level)}</span>${renderUsageBadges(item.usageFlags)}<small>${escapeHtml(result.groupTitle)}</small>${renderSearchUsage(result.key)}</span>
           <strong lang="ja">${renderJapaneseText(matchedPattern)}</strong>
           ${canonicalPattern}
           <span>${escapeHtml(item.meaning)}</span>
@@ -613,8 +963,14 @@ function bindSearchResultActions(root) {
     button.addEventListener("click", () => {
       const action = button.dataset.searchAction;
       if (action === "clear") clearSearch();
-      if (action === "focus") focusSearchResult(button.dataset.resultKey);
-      if (action === "enter") enterSearchResult(button.dataset.groupId, button.dataset.expressionId);
+      if (action === "focus") {
+        commitCurrentSearch(button.dataset.resultKey);
+        focusSearchResult(button.dataset.resultKey);
+      }
+      if (action === "enter") {
+        commitCurrentSearch(`${button.dataset.groupId}::${button.dataset.expressionId}`);
+        enterSearchResult(button.dataset.groupId, button.dataset.expressionId);
+      }
     });
   });
 }
@@ -622,6 +978,7 @@ function bindSearchResultActions(root) {
 function clearSearch() {
   state.query = "";
   state.searchResultKey = "";
+  state.searchCountedForQuery = "";
   $("searchInput").value = "";
   render();
 }
@@ -902,6 +1259,7 @@ function renderExpressions(group, expressions) {
         ${item.source ? `<span class="source-tag">${escapeHtml(item.source)}</span>` : ""}
         ${item._userAdded ? `<span class="source-tag">我添加的</span>` : ""}
         ${usageBadges}
+        ${renderSearchUsage(`${group.id}::${item.id}`)}
         <strong lang="ja">${renderJapaneseText(item.pattern)}</strong>
       </div>
       <p>${escapeHtml(item.meaning)}</p>
@@ -932,7 +1290,13 @@ function renderExpressions(group, expressions) {
 
 function renderCardVariants(item) {
   const variants = [...new Set((item.variants || []).filter((value) => value && value !== item.pattern))];
-  return variants.length ? `<dt>表达变体</dt><dd lang="ja">${variants.map((value) => renderJapaneseText(value)).join(" ／ ")}</dd>` : "";
+  const readings = GrammarSearch.readingForms(item)
+    .filter((entry) => GrammarSearch.compact(entry.form) !== GrammarSearch.compact(entry.reading))
+    .filter((entry, index, entries) => entries.findIndex((candidate) => candidate.reading === entry.reading) === index);
+  return [
+    variants.length ? `<dt>表达变体</dt><dd lang="ja">${variants.map((value) => renderJapaneseText(value)).join(" ／ ")}</dd>` : "",
+    readings.length ? `<dt>检索读音</dt><dd class="search-reading-list" lang="ja">${readings.map((entry) => `${renderJapaneseText(entry.form)} → ${escapeHtml(entry.reading)}`).join(" ／ ")}</dd>` : ""
+  ].join("");
 }
 
 function renderConnectionField(connection) {
@@ -1403,6 +1767,7 @@ function openExpressionEditor(mode, item = null, options = {}) {
     level: "N3",
     pattern: "",
     variants: [],
+    searchAliases: [],
     meaning: "",
     connection: "",
     collocation: "",
@@ -1427,6 +1792,7 @@ function openExpressionEditor(mode, item = null, options = {}) {
         ${inputField("variants", "表达变体（逗号分隔）", (data.variants || []).join("，"))}
         ${inputField("meaning", "意思", data.meaning)}
       </div>
+      ${inputField("searchAliases", "检索别名（逗号分隔，可填假名、汉字、罗马音或近似说法）", (data.searchAliases || []).join("，"))}
       ${textareaField("connection", "接续（用；分隔多条规则，保存后显示为表格）", data.connection)}
       ${textareaField("collocation", "固定搭配", data.collocation || "")}
       ${textareaField("nuance", "语感 / 使用限制", data.nuance)}
@@ -1460,6 +1826,7 @@ function openExpressionEditor(mode, item = null, options = {}) {
       state.custom.additions[group.id].push(addition);
       assignExpressionToComparisonSection(group.id, id, options.comparisonSectionId);
       if (payload.userNote) state.custom.notes[id] = payload.userNote;
+      if (options.supplementQueueKey) delete state.custom.supplementQueue[options.supplementQueueKey];
     } else {
       state.custom.edits[item.id] = payload;
       if (payload.userNote) state.custom.notes[item.id] = payload.userNote;
@@ -1507,10 +1874,12 @@ function openNoteEditor(item) {
 function expressionPayloadFromForm(form) {
   const tags = String(form.get("tags") || "").split(/[，,]/).map((tag) => tag.trim()).filter(Boolean);
   const variants = String(form.get("variants") || "").split(/[，,]/).map((value) => value.trim()).filter(Boolean);
+  const searchAliases = String(form.get("searchAliases") || "").split(/[，,]/).map((value) => value.trim()).filter(Boolean);
   return {
     level: String(form.get("level") || "").trim(),
     pattern: String(form.get("pattern") || "").trim(),
     variants,
+    searchAliases,
     meaning: String(form.get("meaning") || "").trim(),
     connection: String(form.get("connection") || "").trim(),
     collocation: String(form.get("collocation") || "").trim(),

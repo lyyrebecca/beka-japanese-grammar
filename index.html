@@ -21,6 +21,11 @@
           <span aria-hidden="true">☾</span>
           夜间
         </button>
+        <button id="supplementQueueBtn" class="ghost-btn" type="button" title="查看、添加或修改待补充知识清单">
+          <span aria-hidden="true">☑</span>
+          待补充清单
+          <em id="supplementQueueCount" class="top-action-count">0</em>
+        </button>
         <button id="exportBackupBtn" class="ghost-btn" type="button" title="导出本机学习记录、笔记和自定义条目">
           <span aria-hidden="true">⇩</span>
           备份
@@ -29,7 +34,7 @@
           <span aria-hidden="true">⇧</span>
           恢复
         </button>
-        <button id="resetCustomBtn" class="ghost-btn" type="button" title="清空本机新增、修改和笔记">
+        <button id="resetCustomBtn" class="ghost-btn" type="button" title="清空本机新增、修改、笔记和待补充清单">
           <span aria-hidden="true">⌫</span>
           清空自定义
         </button>
@@ -42,10 +47,16 @@
 
     <main class="app-shell">
       <aside id="sidebarPanel" class="sidebar" aria-label="意思组导航">
-        <div class="panel compact">
+        <div class="panel compact search-box-panel">
           <label for="searchInput">搜索意思 / 语法</label>
-          <input id="searchInput" type="search" placeholder="例如：原因、ように、わけだ">
+          <div class="search-input-row">
+            <input id="searchInput" type="search" placeholder="例如：に関する、にかんして">
+            <button id="searchCommitBtn" class="primary-btn compact-action" type="button">检索</button>
+          </div>
+          <small class="search-help">输入时实时预览；按回车或点“检索”记为 1 次。</small>
+          <div id="missingSearchPrompt" class="missing-search-prompt hidden" aria-live="polite"></div>
         </div>
+        <section id="frequentSearchPanel" class="panel compact frequent-search-panel" aria-label="经常检索统计"></section>
         <div class="panel compact">
           <label for="levelFilter">等级范围</label>
           <select id="levelFilter">
@@ -64,28 +75,28 @@
 
       <section class="workspace" aria-live="polite">
         <div id="learningWorkspace">
-        <section class="release-panel" aria-label="第六次更新说明">
+        <section class="release-panel" aria-label="第七次更新说明">
           <div>
-            <p class="eyebrow">V6 update · 第六次更新</p>
-            <h2>第六版：练完一题，马上看懂为什么选它</h2>
-            <p class="summary">同步 V5 之后的全部升级：507 张校订语法卡、分层精准检索、接续表与振假名，以及能直接编辑的相近表达辨析矩阵。</p>
+            <p class="eyebrow">V7 update · 第七次更新</p>
+            <h2>第七版：写法换了也搜得到，没收录也不会丢</h2>
+            <p class="summary">打通汉字、平假名、罗马音和表达变体；新增检索次数、高频复习排行与待补充知识清单，并按原语法书重新整理名词化。</p>
           </div>
           <div class="release-grid">
             <article>
-              <strong>507 张校订主卡</strong>
-              <span>去重保留来源与同形异义；接续、表记、正式程度、振假名与语用徽章一并整理。</span>
+              <strong>同一文型，多种写法直达</strong>
+              <span>「に関して／にかんして／ni kanshite」会回到同一主卡；常见连体形、书面形与汉字表记也已补齐。</span>
             </article>
             <article>
-              <strong>先精确找到，再比较</strong>
-              <span>完全一致、强相关、相近意思、相近构造分层呈现；变体、罗马音和中文功能词均可检索。</span>
+              <strong>经常检索，自动变成复习清单</strong>
+              <span>每次主动检索都会累计到对应词条；小条目与大类统计按次数从高到低排列。</span>
             </article>
             <article>
-              <strong>闯关前直接辨析</strong>
-              <span>43 组 / 507 卡按细分意思分标签，表格对照接续、场景、正负倾向与文体限制。</span>
+              <strong>没搜到，先收进待补充清单</strong>
+              <span>无直接或语义结果时一键收集；可修改备注、重新检索，或整理为当前分类的新知识卡。</span>
             </article>
             <article>
-              <strong>你的辨析也能持续生长</strong>
-              <span>可在辨析区添加表达、新建小类、编辑每条说明；所有内容本机保存并可备份恢复。</span>
+              <strong>名词化，先分两条路线</strong>
+              <span>按教材拆分“单词名词化／句子名词化”，再讲去する、ます形词干、～さ及「の／こと」的使用限制。</span>
             </article>
           </div>
         </section>
@@ -183,6 +194,7 @@
     <script src="content-data.js"></script>
     <script src="furigana-data.js"></script>
     <script src="comparison-data.js"></script>
+    <script src="grammar-search-readings.js"></script>
     <script src="search-engine.js"></script>
     <script src="app.js"></script>
   </body>

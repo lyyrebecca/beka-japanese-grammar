@@ -92,6 +92,20 @@ button {
   gap: 8px;
 }
 
+.top-action-count {
+  display: inline-grid;
+  min-width: 22px;
+  min-height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
 h1,
 h2,
 h3,
@@ -224,6 +238,135 @@ h3 {
   display: grid;
   gap: 8px;
   padding: 14px;
+}
+
+.search-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.search-input-row button {
+  min-height: 44px;
+  padding-inline: 12px;
+}
+
+.search-help,
+.frequent-empty {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.missing-search-prompt {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+  padding-top: 9px;
+}
+
+.missing-search-prompt.hidden {
+  display: none;
+}
+
+.missing-search-prompt p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.missing-search-prompt button {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 8px;
+  white-space: normal;
+}
+
+.frequent-search-panel {
+  gap: 10px;
+}
+
+.frequent-search-head,
+.frequent-search-panel summary,
+.frequent-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.frequent-search-head > span {
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.frequent-search-panel details {
+  border-top: 1px solid var(--line);
+  padding-top: 7px;
+}
+
+.frequent-search-panel summary {
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.frequent-search-panel summary em,
+.frequent-list em {
+  color: var(--accent-2);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.frequent-list {
+  display: grid;
+  gap: 3px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: frequent-rank;
+}
+
+.frequent-list li {
+  counter-increment: frequent-rank;
+}
+
+.frequent-list button {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 5px;
+  text-align: left;
+}
+
+.frequent-list button::before {
+  content: counter(frequent-rank);
+  flex: 0 0 18px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.frequent-list button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frequent-list button:hover,
+.frequent-list button:focus-visible {
+  background: var(--soft-2);
+  color: var(--ink);
 }
 
 label {
@@ -890,6 +1033,23 @@ body.is-resizing * {
 
 .expression-top strong {
   font-size: 22px;
+}
+
+.entry-search-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--button-surface);
+  color: var(--muted);
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.search-reading-list {
+  overflow-wrap: anywhere;
 }
 
 dl {
@@ -1669,6 +1829,103 @@ rt {
   min-height: 86px;
 }
 
+.supplement-queue-editor {
+  min-width: 0;
+}
+
+.supplement-queue-editor > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.supplement-queue-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft-2);
+  padding: 12px;
+}
+
+.supplement-queue-add label {
+  display: grid;
+  gap: 6px;
+}
+
+.supplement-queue-add textarea {
+  min-height: 44px;
+  max-height: 120px;
+}
+
+.supplement-queue-summary,
+.supplement-row-head,
+.supplement-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.supplement-queue-summary span,
+.supplement-row-head span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.supplement-queue-list {
+  display: grid;
+  gap: 10px;
+}
+
+.supplement-queue-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(240px, 1.2fr);
+  gap: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input-bg);
+  padding: 12px;
+}
+
+.supplement-queue-row > label {
+  display: grid;
+  gap: 6px;
+}
+
+.supplement-queue-row textarea {
+  min-height: 74px;
+}
+
+.supplement-row-head,
+.supplement-row-actions {
+  grid-column: 1 / -1;
+}
+
+.supplement-row-head strong {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.supplement-row-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.supplement-delete {
+  margin-left: auto;
+  color: var(--accent-2);
+}
+
 .usage-flag-fields {
   display: flex;
   flex-wrap: wrap;
@@ -1865,6 +2122,20 @@ textarea:disabled {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .supplement-queue-add,
+  .supplement-queue-row {
+    grid-template-columns: 1fr;
+  }
+
+  .supplement-row-head,
+  .supplement-row-actions {
+    grid-column: 1;
+  }
+
+  .supplement-delete {
+    margin-left: 0;
   }
 
   .editor-form header,

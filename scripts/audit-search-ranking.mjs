@@ -9,22 +9,34 @@ const context = { console };
 context.window = context;
 vm.createContext(context);
 await vm.runInContext(await readFile(join(root, "content-data.js"), "utf8"), context);
+await vm.runInContext(await readFile(join(root, "grammar-search-readings.js"), "utf8"), context);
 await vm.runInContext(await readFile(join(root, "search-engine.js"), "utf8"), context);
 await vm.runInContext("globalThis.__groups = GRAMMAR_GROUPS;", context);
 
 const { GrammarSearch, __groups: groups } = context;
-const rank = (query, level = "all") => GrammarSearch.rank(groups, query, { level });
+const rank = (query, level = "all") => GrammarSearch.rank(groups, query, { level, limit: 1000 });
 const patterns = (items) => items.map((item) => item.item.pattern);
 const cards = [...groups].flatMap((group) => [...group.expressions].map((item) => ({ group, item })));
 const registeredExactIds = (query) => {
   const normalized = GrammarSearch.compact(query);
+  const queryReadings = context.GRAMMAR_QUERY_READINGS?.[normalized] || [];
+  const queryValues = new Set([
+    normalized,
+    GrammarSearch.compact(GrammarSearch.normalizeKana(query)),
+    GrammarSearch.compact(GrammarSearch.kanaToRomaji(GrammarSearch.normalizeKana(query))),
+    ...queryReadings,
+    ...queryReadings.map((reading) => GrammarSearch.compact(GrammarSearch.kanaToRomaji(reading)))
+  ].filter(Boolean));
   return cards.filter(({ item }) => [item.pattern, ...(item.variants || [])].flatMap(GrammarSearch.patternVariants).some((form) => {
+    const readings = GrammarSearch.readingForms(item).filter((entry) => GrammarSearch.compact(entry.form) === GrammarSearch.compact(form));
     const forms = [
       GrammarSearch.compact(form),
       GrammarSearch.compact(GrammarSearch.normalizeKana(form)),
-      GrammarSearch.compact(GrammarSearch.kanaToRomaji(GrammarSearch.normalizeKana(form)))
+      GrammarSearch.compact(GrammarSearch.kanaToRomaji(GrammarSearch.normalizeKana(form))),
+      ...readings.map((entry) => GrammarSearch.compact(entry.reading)),
+      ...readings.map((entry) => GrammarSearch.compact(entry.romaji))
     ];
-    return forms.includes(normalized);
+    return forms.some((value) => queryValues.has(value));
   })).map(({ item }) => item.id).sort();
 };
 const exactIds = (query) => [...rank(query).exact].map((result) => result.item.id).sort();
@@ -79,6 +91,21 @@ assert.equal(politeVariant.exact[0]?.item.id, "permission-0-てもいい", "礼�
 assert.equal(rank("そうです（样态）").exact[0]?.item.id, "guess-16-そうだ-样态", "样态 そうです 必须命中样态主卡");
 const karaHomographs = rank("から").exact.map((result) => result.item.id);
 assert.ok(karaHomographs.includes("reason-0-から") && karaHomographs.includes("causeeffect-0-から"), "同形异义的 から 必须同时返回原因和起点两义");
+
+for (const query of ["に関して", "にかんして", "ni kanshite", "に関する", "にかんする", "ni kansuru"]) {
+  assert.equal(rank(query).exact[0]?.item.id, "topic-2-に関して", `${query} 应精确命中 に関して 主卡`);
+}
+assert.ok((rank("にも関わらず").exact || []).some((result) => result.item.id === "concession-3-にもかかわらず"), "汉字表记必须找到假名主卡");
+assert.ok((rank("にもかかわらず").exact || []).some((result) => result.item.id === "concession-3-にもかかわらず"), "假名表记必须找到同一主卡");
+assert.ok(!exactIds("ばかり数量").includes("degree-7-ばかり-数量-程度"), "括号内说明不得被拼成表达变体");
+assert.ok(!JSON.stringify(context.GRAMMAR_SEARCH_READINGS).includes("ばかり数量"), "括号内说明不得混入读音索引");
+
+for (const { item } of cards) {
+  for (const reading of GrammarSearch.readingForms(item)) {
+    assert.ok(rank(reading.reading).exact.some((result) => result.item.id === item.id), `平假名必须精确命中汉字词条：${item.id} / ${reading.reading}`);
+    assert.ok(rank(reading.romaji).exact.some((result) => result.item.id === item.id), `罗马音必须精确命中汉字词条：${item.id} / ${reading.romaji}`);
+  }
+}
 
 // 全库检查：任何精确结果都必须有相同的主句式/已登记变体；别名只可进入强相关。
 for (const { item } of cards) {

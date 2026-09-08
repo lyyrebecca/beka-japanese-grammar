@@ -2245,6 +2245,44 @@ function consolidateGrammarCards() {
     entry.item.searchAliases = patch.aliases;
   }
 
+  // 同一语法在教材、新闻和日常书写中常会切换「て形 / 连体形 / 书面形」
+  // 或「汉字 / 假名」表记。这里只登记意义和接续不变的形式，避免把近义但
+  // 不可直接互换的句式塞进“完全一致”。这些形式也会进入读音索引。
+  const surfaceVariantPatches = {
+    "reason-10-によって-による-原因": ["によって", "による", "により"],
+    "change-10-に伴って-とともに": ["に伴って", "に伴い", "に伴う", "とともに", "と共に"],
+    "change-13-に従って-に従い": ["に従って", "に従い", "に従う", "にしたがって", "にしたがい"],
+    "comparison-3-に比べて": ["に比べて", "に比べ", "にくらべて"],
+    "concession-3-にもかかわらず": ["にもかかわらず", "にも関わらず"],
+    "guess-5-恐れがある": ["恐れがある", "おそれがある"],
+    "guess-19-おそれがある": ["おそれがある", "恐れがある"],
+    "basis-5-に基づいて": ["に基づいて", "に基づき", "に基づく", "にもとづいて"],
+    "basis-7-とおり-どおり": ["とおり", "通り", "どおり"],
+    "basis-10-に沿って": ["に沿って", "に沿い", "に沿った", "にそって"],
+    "basis-11-に応じて": ["に応じて", "に応じ", "に応じた", "におうじて"],
+    "time-5-たびに": ["たびに", "度に"],
+    "time-11-際に": ["際に", "さいに"],
+    "time-12-に際して-にあたって": ["に際して", "に際し", "にあたって", "に当たって"],
+    "contrast-3-に対して": ["に対して", "にたいして"],
+    "contrast-5-に対する": ["に対する", "にたいする"],
+    "topic-2-に関して": ["に関して", "に関する", "に関しては", "に関しても", "にかんして", "にかんする"],
+    "topic-4-をめぐって": ["をめぐって", "をめぐる", "を巡って", "を巡る"],
+    "means-2-を通して": ["を通して", "を通じて", "を通じ", "を通した"],
+    "irrelevance-2-を問わず": ["を問わず", "をとわず"],
+    "irrelevance-3-いかんにかかわらず": ["いかんにかかわらず", "如何にかかわらず", "如何に関わらず"],
+    "irrelevance-4-にかかわりなく-にかかわらず": ["にかかわりなく", "にかかわらず", "に関わりなく", "に関わらず"],
+    "range-1-にわたって": ["にわたって", "にわたり", "にわたる"],
+    "range-2-に至るまで": ["に至るまで", "にいたるまで"],
+    "range-3-を皮切りに": ["を皮切りに", "をかわきりに"],
+    "range-4-を限りに": ["を限りに", "をかぎりに"],
+    "range-7-における-において": ["における", "において", "においては"]
+  };
+  for (const [id, variants] of Object.entries(surfaceVariantPatches)) {
+    const entry = byId.get(id);
+    if (!entry) continue;
+    entry.item.variants = [...new Set([...(entry.item.variants || []), ...variants])];
+  }
+
   const senses = new Map();
   for (const group of GRAMMAR_GROUPS) {
     for (const item of group.expressions) {
@@ -2844,12 +2882,11 @@ function normalizeReadablePattern(pattern) {
 }
 
 function readablePatternKeys(pattern) {
-  const raw = String(pattern || "").replace(/[「」『』\s　]/g, "");
+  const raw = String(pattern || "")
+    .replace(/[「」『』\s　]/g, "")
+    .replace(/[（(【\[].*?[）)】\]]/g, "");
   const parts = raw.split(/[\/／・、,]/).filter(Boolean);
-  return [...new Set((parts.length ? parts : [raw]).flatMap((part) => [
-    normalizeReadablePattern(part),
-    normalizeReadablePattern(part.replace(/[（(【\[].*?[）)】\]]/g, ""))
-  ]).filter(Boolean))];
+  return [...new Set((parts.length ? parts : [raw]).map(normalizeReadablePattern).filter(Boolean))];
 }
 
 function upgradeChallengeLibrary() {

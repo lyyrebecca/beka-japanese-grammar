@@ -10,6 +10,7 @@ const files = [
   ["styles.css", "text/css; charset=utf-8"],
   ["app.js", "application/javascript; charset=utf-8"],
   ["search-engine.js", "application/javascript; charset=utf-8"],
+  ["grammar-search-readings.js", "application/javascript; charset=utf-8"],
   ["furigana-data.js", "application/javascript; charset=utf-8"],
   ["comparison-data.js", "application/javascript; charset=utf-8"],
   ["content-data.js", "application/javascript; charset=utf-8"],

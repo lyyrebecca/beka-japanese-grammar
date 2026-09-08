@@ -23,7 +23,7 @@ function textOf(item) {
   return JSON.stringify(item);
 }
 
-check(Array.isArray(cards) && cards.length >= 49, `卡片数量异常：${cards?.length ?? "不可读"}`);
+check(Array.isArray(cards) && cards.length >= 50, `卡片数量异常：${cards?.length ?? "不可读"}`);
 check(new Set(cards.map((item) => item.id)).size === cards.length, "存在重复卡片 id");
 
 const categoryPairs = new Set(
@@ -60,6 +60,10 @@ const mustContain = [
   ["dict-hajimeru", "ます形词干 + はじめる"],
   ["nominalization-no-koto", "学生であること"],
   ["nominalization-no-koto", "名词不能机械写成"],
+  ["nominalization-overview", "单词名词化"],
+  ["nominalization-overview", "句子名词化"],
+  ["nominalization-word", "只限习惯上可这样使用的一部分动词"],
+  ["nominalization-word", "いい→よさ"],
 ];
 for (const [id, expected] of mustContain) {
   check(textOf(card(id)).includes(expected), `${id} 未包含已校正规则：${expected}`);
