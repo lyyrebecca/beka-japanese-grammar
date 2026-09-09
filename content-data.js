@@ -492,7 +492,7 @@ const KANZEN_ENHANCEMENTS = {
   explanation: {
     axis: "説明・形式名詞",
     bookPath: "N5 んです → N3 わけだ/わけではない → N2 わけがない/わけにはいかない → N1 というものだ",
-    focus: "わけ 系列是新完全掌握式辨析重点，要整组学",
+    focus: "わけ 系列表达适合放在一起辨析学习",
     route: ["先用 んです 学说明背景。", "わけだ 是从事实得出结论；わけではない 是否定过度理解。", "わけにはいかない 表社会/心理上不能做。"],
     expressions: [
       expression("N3", "わけがない", "不可能", "普通形 + わけがない", "强烈否定可能性。", "一日で全部覚えられるわけがありません。", "不可能一天全记住。"),
@@ -962,8 +962,8 @@ function ensureCatalogGroup(groupId) {
     habit: ["habit", "習慣・努力", "习惯", "整理习惯化、努力做到、平时注意等表达。", "習慣"],
     necessity: ["necessity", "必要・選択肢なし", "必要", "整理不得不、只好、别无选择等表达。", "必要"],
     means: ["means", "手段・状況", "手段", "整理手段、条件、状况下发生等表达。", "手段・状況"]
-  }[groupId] || [groupId, groupId, groupId, "从新完全掌握目录补入的语法功能组。", "新完全掌握目录补充"];
-  group = makeManualGroup(...meta, "新完全掌握 N4-N1 目录与特殊用法补充", [], []);
+  }[groupId] || [groupId, groupId, groupId, "补入的语法功能组。", "语法功能补充"];
+  group = makeManualGroup(...meta, "N4-N1 功能与特殊用法补充", [], []);
   GRAMMAR_GROUPS.push(group);
   return group;
 }
@@ -1022,7 +1022,7 @@ function addKanzenBookExtracts() {
     if (!group) {
       const meta = {
         range: ["range", "範囲・期限", "范围", "从期限、持续范围到极端范围，整理まで、にわたって、に至るまで等表达。", "範囲・期限・到達点"],
-        article_flow: ["article_flow", "文章文法・接続", "文章", "把新完全掌握文章语法中的理由提示、对比、换言、篇章衔接整理成写作可用的卡片。", "文章構成・接続"]
+        article_flow: ["article_flow", "文章文法・接続", "文章", "把理由提示、对比、换言、篇章衔接整理成写作可用的卡片。", "文章構成・接続"]
       }[groupId];
       if (!meta) continue;
       group = makeManualGroup(...meta, "N3/N2/N1 文章语法与范围表达", [], []);
@@ -2931,6 +2931,7 @@ function enrichChallenge(group, item, index, sourceType) {
   item.sourceBook = sourceBook;
   item.sourceLesson = sourceLesson;
   item.sourceType = item.sourceType || sourceType;
+  item.sourceOrigin ||= expressionItem?.sourceOrigin || (expressionItem?._userAdded ? "user" : "grammar");
   item.id = item.id || `${group.id}-challenge-${index}-${normalizePatternKey(target).slice(0, 32)}`;
   item.keywords = item[2];
   return item;
@@ -2952,13 +2953,14 @@ function challengeFromExpression(group, item, index) {
     item.pattern,
     keywords,
     sample,
-    `${levelFromText(item.level) || item.level} 练习：先确认接续「${item.connection || "见知识卡片"}」，再体会语感：${item.nuance || item.meaning}。参考：${sourceBook.replace("新完全掌握日语语法书 ", "新完全掌握 ")} ${sourceLesson}`,
+    `${levelFromText(item.level) || item.level} 练习：先确认接续「${item.connection || "见知识卡片"}」，再体会语感：${item.nuance || item.meaning}。`,
     {
       id: `${group.id}-auto-${index}-${normalizePatternKey(item.pattern).slice(0, 32)}`,
       level: item.level,
       sourceBook,
       sourceLesson,
-      sourceType: hasRealExample ? "例句改写" : "知识点造句"
+      sourceType: hasRealExample ? "例句改写" : "知识点造句",
+      sourceOrigin: item.sourceOrigin || (item._userAdded ? "user" : "grammar")
     }
   );
 }

@@ -4,6 +4,8 @@ const CUSTOM_CONTENT_KEY = "jp-grammar-custom-content-v1";
 const LAYOUT_KEY = "jp-grammar-panel-layout-v1";
 
 const EMPTY_SEARCH_STATS = { total: 0, items: {} };
+const FREQUENT_COLLAPSED_COUNT = 5;
+const FREQUENT_PAGE_SIZE = 10;
 const EMPTY_PROGRESS = { completed: {}, hard: {}, answers: {}, lastGroup: "", searchStats: EMPTY_SEARCH_STATS };
 const EMPTY_CUSTOM = { edits: {}, notes: {}, additions: {}, deleted: {}, preferences: {}, supplementQueue: {}, comparison: { sections: {}, profiles: {}, memberships: {} }, schemaVersion: 3 };
 
@@ -15,6 +17,9 @@ const state = {
   searchCountedForQuery: "",
   level: "all",
   expandedGroups: {},
+  frequentItemsExpanded: false,
+  frequentItemsPage: 0,
+  frequentGroupsPage: 0,
   comparisonSectionId: "",
   theme: loadTheme(),
   progress: loadProgress(),
@@ -118,9 +123,9 @@ function bindPanelResizers() {
     sidebar: {
       container: appShell,
       variable: "--sidebar-width",
-      min: 220,
+      min: 280,
       panel: $("sidebarPanel"),
-      getMax: () => Math.max(220, appShell.clientWidth - 472),
+      getMax: () => Math.max(280, appShell.clientWidth - 472),
     },
     knowledge: {
       container: studyGrid,
@@ -342,6 +347,47 @@ function mergeExpression(item, userAdded) {
   };
 }
 
+function sourceOriginKind(item = {}) {
+  if (item._userAdded || item.sourceOrigin === "user") return "user";
+  if (item.sourceOrigin === "web") return "web";
+  const trace = [item.sourceOrigin, item.source, item.sourceBook, item.sourceLesson, item.sourceType]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (/(网页|网站|网络|web|online|url)/.test(trace)) return "web";
+  if (/(自己添加|我添加|用户添加|user|custom|待补充)/.test(trace)) return "user";
+  return "grammar";
+}
+
+function sourceOriginLabel(item = {}) {
+  const labels = { grammar: "来源：语法书", web: "来源：网页", user: "来源：自己添加" };
+  return labels[sourceOriginKind(item)];
+}
+
+// 资料的具体书名、课次和整理工具只用于内部整理，不作为学习页信息展示。
+// 标签仍然保留语法功能，避免把“蓝宝书 / OCR”等整理痕迹误当成知识标签。
+function isSourceMetadataTag(tag) {
+  return /(蓝宝书|新完全掌握|高考|语法专项|paddle\s*ocr|\bocr\b|来源|教材整理|书籍整理)/i.test(String(tag || ""));
+}
+
+function visibleTags(tags = []) {
+  return tags.filter((tag) => !isSourceMetadataTag(tag));
+}
+
+function sanitizeSourceAttribution(text, fallback = "") {
+  const value = String(text || "").trim();
+  if (!value) return fallback;
+  // These are attribution-only sentences that occasionally entered the learning copy.
+  // Keep the grammatical conclusion, but never surface a book title, lesson, or OCR trace.
+  const rewritten = value
+    .replace(/蓝宝书把它放在原因、依据、手段、对象等多处，必须按后项判断功能。?/g, "这个表达可表示原因、依据、手段、对象等多种功能，必须按后项判断。")
+    .replace(/(?:《?新完全掌握[^。；;]*[。；;]?|高考日语(?:蓝宝书)?[^。；;]*[。；;]?|[^。；;]*Paddle\s*OCR[^。；;]*[。；;]?)/gi, "")
+    .replace(/(?:教材|书中)(?:明确|特别)?(?:说|指出|把它限定为|显示)/g, "使用时注意")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return rewritten || fallback;
+}
+
 function migrateCustomContent(raw = {}) {
   const custom = { ...structuredClone(EMPTY_CUSTOM), ...(raw || {}) };
   custom.edits ||= {};
@@ -363,7 +409,7 @@ function migrateCustomContent(raw = {}) {
   const supplement = (item, label) => {
     const fields = [
       ["文型", item.pattern], ["意思", item.meaning], ["接续", item.connection], ["固定搭配", item.collocation],
-      ["语感", item.nuance], ["例句", item.example], ["译文", item.translation], ["来源", [item.sourceBook, item.sourceLesson].filter(Boolean).join(" · ")]
+      ["语感", item.nuance], ["例句", item.example], ["译文", item.translation], ["来源", sourceOriginLabel(item)]
     ].filter(([, value]) => value);
     return fields.length ? `【原自定义补充${label ? `：${label}` : ""}】\n${fields.map(([name, value]) => `${name}：${value}`).join("\n")}` : "";
   };
@@ -572,8 +618,7 @@ function supplementExpressionDraft(item) {
     nuance: "",
     example: "",
     translation: "",
-    sourceBook: "待补充知识清单",
-    sourceLesson: "待查证整理",
+    sourceOrigin: "user",
     tags: [currentGroup()?.theme].filter(Boolean),
     usageFlags: {},
     userNote: item.note || ""
@@ -725,26 +770,62 @@ function renderFrequentSearchPanel() {
     groupMap.set(item.groupId, previous);
   });
   const groups = [...groupMap.values()].sort((a, b) => b.count - a.count || String(a.groupTitle).localeCompare(String(b.groupTitle), "zh-CN"));
+  const collapsedItems = items.slice(0, FREQUENT_COLLAPSED_COUNT);
+  const itemPageCount = Math.max(1, Math.ceil(items.length / FREQUENT_PAGE_SIZE));
+  const groupPageCount = Math.max(1, Math.ceil(groups.length / FREQUENT_PAGE_SIZE));
+  state.frequentItemsPage = Math.min(Math.max(0, state.frequentItemsPage), itemPageCount - 1);
+  state.frequentGroupsPage = Math.min(Math.max(0, state.frequentGroupsPage), groupPageCount - 1);
+  const displayedItems = state.frequentItemsExpanded
+    ? items.slice(state.frequentItemsPage * FREQUENT_PAGE_SIZE, (state.frequentItemsPage + 1) * FREQUENT_PAGE_SIZE)
+    : collapsedItems;
+  const displayedGroups = groups.slice(state.frequentGroupsPage * FREQUENT_PAGE_SIZE, (state.frequentGroupsPage + 1) * FREQUENT_PAGE_SIZE);
+  const itemRankOffset = state.frequentItemsExpanded ? state.frequentItemsPage * FREQUENT_PAGE_SIZE : 0;
+  const groupRankOffset = state.frequentGroupsPage * FREQUENT_PAGE_SIZE;
   panel.innerHTML = `
     <div class="frequent-search-head">
       <div><p class="eyebrow">复习统计</p><strong>经常检索</strong></div>
       <span>${Number(stats.total || 0)} 次</span>
     </div>
     ${items.length ? `
-      <details open>
-        <summary>小条目排行 <em>${items.length}</em></summary>
-        <ol class="frequent-list">${items.slice(0, 10).map((item) => `
+      <section class="frequent-ranking" aria-label="小条目检索排行">
+        <div class="frequent-ranking-title"><strong>小条目排行</strong><em>${items.length}</em></div>
+        <ol class="frequent-list" style="counter-reset: frequent-rank ${itemRankOffset};">${displayedItems.map((item) => `
           <li><button type="button" data-frequent-item="${escapeAttr(item.key)}"><span lang="ja">${renderJapaneseText(item.pattern)}</span><em>${item.count}</em></button></li>
         `).join("")}</ol>
-      </details>
-      <details>
+        ${items.length > FREQUENT_COLLAPSED_COUNT ? state.frequentItemsExpanded ? `
+          ${renderFrequentPagination("items", state.frequentItemsPage, itemPageCount)}
+          <button type="button" class="frequent-fold-btn" data-frequent-toggle="collapse" aria-expanded="true">收起，只显示前 ${FREQUENT_COLLAPSED_COUNT} 条</button>
+        ` : `
+          <button type="button" class="frequent-fold-btn" data-frequent-toggle="expand" aria-expanded="false">展开完整排行（其余 ${items.length - FREQUENT_COLLAPSED_COUNT} 条）</button>
+        ` : ""}
+      </section>
+      <details class="frequent-group-details">
         <summary>大类统计 <em>${groups.length}</em></summary>
-        <ol class="frequent-list frequent-list--groups">${groups.map((group) => `
+        <ol class="frequent-list frequent-list--groups" style="counter-reset: frequent-rank ${groupRankOffset};">${displayedGroups.map((group) => `
           <li><button type="button" data-frequent-group="${escapeAttr(group.groupId)}"><span>${escapeHtml(group.groupTitle)}</span><em>${group.count}</em></button></li>
         `).join("")}</ol>
+        ${renderFrequentPagination("groups", state.frequentGroupsPage, groupPageCount)}
       </details>
     ` : `<p class="frequent-empty">检索并打开词条后，这里会按次数从高到低生成复习清单。</p>`}
   `;
+  panel.querySelectorAll("[data-frequent-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.frequentItemsExpanded = button.dataset.frequentToggle === "expand";
+      state.frequentItemsPage = 0;
+      renderFrequentSearchPanel();
+    });
+  });
+  panel.querySelectorAll("[data-frequent-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = button.dataset.frequentPage;
+      const pageCount = kind === "items" ? itemPageCount : groupPageCount;
+      const current = kind === "items" ? state.frequentItemsPage : state.frequentGroupsPage;
+      const next = Math.min(pageCount - 1, Math.max(0, current + Number(button.dataset.frequentPageDelta || 0)));
+      if (kind === "items") state.frequentItemsPage = next;
+      else state.frequentGroupsPage = next;
+      renderFrequentSearchPanel();
+    });
+  });
   panel.querySelectorAll("[data-frequent-item]").forEach((button) => {
     button.addEventListener("click", () => {
       const item = searchUsageEntry(button.dataset.frequentItem);
@@ -774,6 +855,15 @@ function renderFrequentSearchPanel() {
       render();
     });
   });
+}
+
+function renderFrequentPagination(kind, page, pageCount) {
+  if (pageCount <= 1) return "";
+  return `<nav class="frequent-pagination" aria-label="${kind === "items" ? "小条目排行" : "大类统计"}分页">
+    <button type="button" data-frequent-page="${kind}" data-frequent-page-delta="-1" ${page === 0 ? "disabled" : ""}>上一页</button>
+    <span>第 ${page + 1} / ${pageCount} 页</span>
+    <button type="button" data-frequent-page="${kind}" data-frequent-page-delta="1" ${page >= pageCount - 1 ? "disabled" : ""}>下一页</button>
+  </nav>`;
 }
 
 function setSearchMode(active) {
@@ -938,13 +1028,13 @@ function renderSearchResultCard(result, open) {
         <dl>
           ${renderConnectionField(item.connection)}
           <dt>搭配</dt><dd lang="ja">${renderJapaneseText(item.collocation || "—")}</dd>
-          <dt>语感</dt><dd>${escapeHtml(item.nuance || "—")}</dd>
+          <dt>语感</dt><dd>${escapeHtml(sanitizeSourceAttribution(item.nuance, "—"))}</dd>
           <dt>正式</dt><dd>${escapeHtml(profile.formality)}</dd>
           <dt>表记</dt><dd lang="ja">${renderJapaneseText(profile.notation)}</dd>
           ${variants}
           ${homographs}
           ${item.relatedGroups?.length > 1 ? `<dt>相关分类</dt><dd>${escapeHtml(item.relatedGroups.map(groupTitleForId).join(" · "))}</dd>` : ""}
-          <dt>来源</dt><dd>${escapeHtml([item.sourceBook, item.sourceLesson].filter(Boolean).join(" · ") || "—")}</dd>
+          <dt>来源</dt><dd>${escapeHtml(sourceOriginLabel(item))}</dd>
         </dl>
         ${item.example ? `<div class="example"><p lang="ja">${renderExample(item)}</p><small>${escapeHtml(item.translation || "")}</small></div>` : ""}
         <div class="button-row"><button class="secondary-btn compact-action" type="button" data-search-action="enter" data-group-id="${escapeAttr(result.groupId)}" data-expression-id="${escapeAttr(item.id)}">进入所属分类</button></div>
@@ -1256,8 +1346,7 @@ function renderExpressions(group, expressions) {
       </div>
       <div class="expression-top">
         <span class="level">${escapeHtml(item.level)}</span>
-        ${item.source ? `<span class="source-tag">${escapeHtml(item.source)}</span>` : ""}
-        ${item._userAdded ? `<span class="source-tag">我添加的</span>` : ""}
+        <span class="source-tag">${escapeHtml(sourceOriginLabel(item))}</span>
         ${usageBadges}
         ${renderSearchUsage(`${group.id}::${item.id}`)}
         <strong lang="ja">${renderJapaneseText(item.pattern)}</strong>
@@ -1266,15 +1355,15 @@ function renderExpressions(group, expressions) {
       <dl>
         ${renderConnectionField(item.connection)}
         <dt>搭配</dt><dd lang="ja">${renderJapaneseText(item.collocation || "—")}</dd>
-        <dt>语感</dt><dd>${escapeHtml(item.nuance)}</dd>
+        <dt>语感</dt><dd>${escapeHtml(sanitizeSourceAttribution(item.nuance, "—"))}</dd>
         <dt>正式</dt><dd>${escapeHtml(profile.formality)}</dd>
         <dt>表记</dt><dd lang="ja">${renderJapaneseText(profile.notation)}</dd>
         ${variants}
         ${homographs}
         ${item.relatedGroups?.length > 1 ? `<dt>相关分类</dt><dd>${escapeHtml(item.relatedGroups.map(groupTitleForId).join(" · "))}</dd>` : ""}
-        <dt>来源</dt><dd>${escapeHtml([item.sourceBook, item.sourceLesson].filter(Boolean).join(" · "))}</dd>
+        <dt>来源</dt><dd>${escapeHtml(sourceOriginLabel(item))}</dd>
       </dl>
-      <div class="tag-row">${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+      <div class="tag-row">${visibleTags(item.tags).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
       <div class="example">
         <p lang="ja">${renderExample(item)}</p>
         <small>${escapeHtml(item.translation)}</small>
@@ -1460,8 +1549,7 @@ function renderChallenge() {
     <div class="challenge-meta">
       <span>${escapeHtml(level)}</span>
       <span>${escapeHtml(group.title)}</span>
-      <span>${escapeHtml(challenge.sourceType || "翻译练习")}</span>
-      <span>${escapeHtml([challenge.sourceBook, challenge.sourceLesson].filter(Boolean).join(" · "))}</span>
+      <span>${escapeHtml(sourceOriginLabel(challenge))}</span>
     </div>
     <p class="prompt">${escapeHtml(prompt)}</p>
     <div class="target-row">
@@ -1585,7 +1673,7 @@ function renderComparisonMatrix({ followTarget = false } = {}) {
       ${hiddenCount ? `<small>等级筛选暂时隐藏 ${hiddenCount} 条；点击表内词条会自动显示全部等级并定位知识卡。</small>` : ""}
     </div>
     ${items.length ? `<div class="comparison-table-wrap"><table class="comparison-table">
-      <thead><tr><th scope="col">表达</th><th scope="col">核心意思／区别</th><th scope="col">接续</th><th scope="col">倾向・文体・正式程度</th><th scope="col">适合场景／不可或慎用</th></tr></thead>
+      <thead><tr><th scope="col">表达</th><th scope="col">核心意思／区别</th><th scope="col">接续</th><th scope="col">倾向・文体・正式程度</th><th scope="col">适合场景／不可或慎用</th><th scope="col">真实例句（中日）</th></tr></thead>
       <tbody>${items.map((item) => renderComparisonRow(item)).join("")}</tbody>
     </table></div>` : `<p class="empty-state">当前等级筛选下没有该板块的条目。切换“全部 N5-N1”可查看完整辨析。</p>`}
   `;
@@ -1602,10 +1690,11 @@ function renderComparisonRow(item) {
   const formal = usageProfile(item).formality;
   return `<tr>
     <th scope="row" data-label="表达"><div class="comparison-expression-actions"><button class="comparison-expression-btn" type="button" data-comparison-expression="${escapeAttr(item.id)}"><span lang="ja">${renderJapaneseText(item.pattern)}</span><small>${escapeHtml(item.level)}</small></button><button class="comparison-row-edit" type="button" data-comparison-edit="${escapeAttr(item.id)}" title="修改这条辨析说明">✎</button></div></th>
-    <td data-label="核心意思／区别"><strong>${escapeHtml(item.meaning || "—")}</strong><p>${escapeHtml(profile.coreDifference)}</p></td>
+    <td data-label="核心意思／区别"><strong>${escapeHtml(item.meaning || "—")}</strong><p>${escapeHtml(sanitizeSourceAttribution(profile.coreDifference, item.meaning || "—"))}</p></td>
     <td data-label="接续" class="comparison-connection" lang="ja">${renderComparisonConnection(item.connection)}</td>
     <td data-label="倾向・文体・正式程度"><div class="comparison-tone">${renderUsageBadges(item.usageFlags)}<span>${escapeHtml(profile.polarity)}</span><span>${escapeHtml(profile.register || formal)}</span><small>${escapeHtml(formal)}</small></div></td>
     <td data-label="适合场景／不可或慎用" class="comparison-scenes"><p><b>适合：</b>${escapeHtml(profile.usageScene)}</p><p><b>限制：</b>${escapeHtml(profile.avoidScene)}</p></td>
+    <td data-label="真实例句（中日）" class="comparison-example"><p class="comparison-example-ja" lang="ja">${renderExample(item)}</p><p class="comparison-example-zh"><b>中译：</b>${escapeHtml(item.translation || "—")}</p><small>${escapeHtml(sourceOriginLabel(item))}</small></td>
   </tr>`;
 }
 
@@ -1665,7 +1754,7 @@ function showFeedback(forceAnswer, results = null) {
     <p><strong>目标：</strong><span lang="ja">${renderJapaneseText(target)}</span></p>
     <p><strong>难度：</strong>${escapeHtml(challengeLevel(challenge, currentGroup()))}</p>
     <p><strong>参考译文：</strong><span lang="ja" class="answer-ja">${annotateJapanese(sample)}</span></p>
-    <p><strong>辨析：</strong>${escapeHtml(note)}</p>
+    <p><strong>辨析：</strong>${escapeHtml(sanitizeSourceAttribution(note, "请结合接续和语境判断。"))}</p>
     ${forceAnswer ? "<p class=\"tip\">先比较目标句式和接续，再自己给这题打分：句式 40%，自然度 40%，助词和时态 20%。</p>" : ""}
   `;
 }
@@ -1774,8 +1863,7 @@ function openExpressionEditor(mode, item = null, options = {}) {
     nuance: "",
     example: "",
     translation: "",
-    sourceBook: "我添加的语法",
-    sourceLesson: group.title,
+    sourceOrigin: "user",
     tags: [group.theme].filter(Boolean),
     usageFlags: {},
     userNote: ""
@@ -1798,10 +1886,7 @@ function openExpressionEditor(mode, item = null, options = {}) {
       ${textareaField("nuance", "语感 / 使用限制", data.nuance)}
       ${textareaField("example", "例句", data.example)}
       ${textareaField("translation", "译文", data.translation)}
-      <div class="form-grid">
-        ${inputField("sourceBook", "来源书", data.sourceBook)}
-        ${inputField("sourceLesson", "来源课次", data.sourceLesson)}
-      </div>
+      ${sourceOriginField(sourceOriginKind(data))}
       ${inputField("tags", "标签（用逗号分隔）", (data.tags || []).join("，"))}
       ${usageFlagFields(data.usageFlags)}
       ${textareaField("userNote", "我的笔记", data.userNote || "")}
@@ -1886,8 +1971,7 @@ function expressionPayloadFromForm(form) {
     nuance: String(form.get("nuance") || "").trim(),
     example: String(form.get("example") || "").trim(),
     translation: String(form.get("translation") || "").trim(),
-    sourceBook: String(form.get("sourceBook") || "").trim(),
-    sourceLesson: String(form.get("sourceLesson") || "").trim(),
+    sourceOrigin: String(form.get("sourceOrigin") || "user"),
     tags,
     usageFlags: Object.fromEntries(Object.keys(USAGE_BADGES).map((key) => [key, form.get(`usage-${key}`) === "on"])),
     userNote: String(form.get("userNote") || "").trim()
@@ -1956,6 +2040,11 @@ function closeDialog() {
 
 function inputField(name, label, value) {
   return `<label>${escapeHtml(label)}<input name="${escapeAttr(name)}" value="${escapeAttr(value || "")}"></label>`;
+}
+
+function sourceOriginField(value = "grammar") {
+  const options = [["grammar", "语法书"], ["web", "网页"], ["user", "自己添加"]];
+  return `<label>来源类型<select name="sourceOrigin">${options.map(([key, label]) => `<option value="${key}"${key === value ? " selected" : ""}>${label}</option>`).join("")}</select></label>`;
 }
 
 function textareaField(name, label, value) {

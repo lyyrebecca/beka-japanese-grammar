@@ -354,11 +354,9 @@ function renderCards() {
 
 function renderCard(card) {
   const table = renderTable(card.table);
-  const notes = (card.notes || []).map((note) => `<p>${escapeHtml(note)}</p>`).join("");
-  const badges = (card.badges || []).map((badge) => `<span>${escapeHtml(badge)}</span>`).join("");
-  const sourceNote = card.sourceNote
-    ? `<p class="conj-source-note">来源：${escapeHtml(card.sourceNote)}</p>`
-    : "";
+  const notes = (card.notes || []).map((note) => `<p>${escapeHtml(sanitizeConjugationSourceAttribution(note))}</p>`).join("");
+  const badges = (card.badges || []).filter((badge) => !isConjugationSourceTag(badge)).map((badge) => `<span>${escapeHtml(badge)}</span>`).join("");
+  const sourceNote = `<p class="conj-source-note">${escapeHtml(conjugationSourceOriginLabel(card))}</p>`;
   const exampleHtml = card.example
     ? `<div class="conj-example">
         <p lang="ja">${renderJapaneseText(card.example)}</p>
@@ -380,6 +378,24 @@ function renderCard(card) {
       ${notes ? `<div class="conj-notes">${notes}</div>` : ""}
       ${sourceNote}
     </article>`;
+}
+
+function conjugationSourceOriginLabel(card = {}) {
+  const trace = [card.sourceOrigin, card.sourceNote].filter(Boolean).join(" ").toLowerCase();
+  if (/(网页|网站|网络|web|online|url)/.test(trace)) return "来源：网页";
+  if (/(自己添加|我添加|用户添加|user|custom)/.test(trace)) return "来源：自己添加";
+  return "来源：语法书";
+}
+
+function isConjugationSourceTag(tag) {
+  return /(蓝宝书|新完全掌握|高考|语法专项|paddle\s*ocr|\bocr\b|来源|教材规则)/i.test(String(tag || ""));
+}
+
+function sanitizeConjugationSourceAttribution(text) {
+  return String(text || "")
+    .replace(/(?:《?新完全掌握[^。；;]*[。；;]?|高考日语(?:蓝宝书)?[^。；;]*[。；;]?|[^。；;]*Paddle\s*OCR[^。；;]*[。；;]?)/gi, "")
+    .replace(/教材(?:明确|特别)?(?:说|指出|显示|把它限定为)/g, "使用时注意")
+    .trim();
 }
 
 function renderTable(table) {
